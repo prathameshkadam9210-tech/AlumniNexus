@@ -1,0 +1,154 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  password      String?
+  name          String
+  role          String   @default("STUDENT")
+  avatar        String?
+  phone         String?
+  bio           String?
+  department    String?
+  batch         String?
+  graduationYear Int?
+  company       String?
+  designation   String?
+  experience    String?
+  location      String?
+  skills        String?
+  resumeUrl     String?
+  linkedinUrl   String?
+  gpa           Float?
+  isVerified    Boolean  @default(false)
+  isOnline      Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  postedJobs        Job[]
+  applications      Application[] @relation("UserApplications")
+  mentorSlotsOffered Mentorship[] @relation("MentorOffers")
+  mentorBookings     Mentorship[] @relation("MentorBookings")
+  organizedEvents    Event[]
+  notifications      Notification[]
+
+  @@map("users")
+}
+
+model Job {
+  id            String   @id @default(cuid())
+  title         String
+  company       String
+  location      String
+  type          String   @default("FULL_TIME")
+  salaryMin     Float?
+  salaryMax     Float?
+  currency      String   @default("INR")
+  description   String
+  requirements  String
+  skills        String?
+  experienceRequired String?
+  postedById    String
+  postedBy      User     @relation(fields: [postedById], references: [id])
+  status        String   @default("OPEN")
+  deadline      DateTime?
+  applicantsCount Int    @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  applications  Application[]
+
+  @@map("jobs")
+}
+
+model Application {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation("UserApplications", fields: [userId], references: [id])
+  jobId         String
+  job           Job      @relation(fields: [jobId], references: [id])
+  status        String   @default("PENDING")
+  coverLetter   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([userId, jobId])
+  @@map("applications")
+}
+
+model Mentorship {
+  id            String   @id @default(cuid())
+  mentorId      String
+  mentor        User     @relation("MentorOffers", fields: [mentorId], references: [id])
+  menteeId      String
+  mentee        User     @relation("MentorBookings", fields: [menteeId], references: [id])
+  date          DateTime
+  timeSlot      String
+  duration      Int      @default(30)
+  status        String   @default("PENDING")
+  topic         String?
+  meetingLink   String?
+  notes         String?
+  menteeName    String?
+  mentorName    String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("mentorships")
+}
+
+model Event {
+  id            String   @id @default(cuid())
+  title         String
+  description   String
+  date          DateTime
+  endTime       DateTime?
+  time          String?
+  location      String?
+  type          String   @default("WORKSHOP")
+  organizerId   String
+  organizer     User     @relation(fields: [organizerId], references: [id])
+  maxAttendees  Int?
+  currentAttendees Int   @default(0)
+  image         String?
+  isFeatured    Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("events")
+}
+
+model Notification {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id])
+  title         String
+  message       String
+  type          String   @default("INFO")
+  link          String?
+  isRead        Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  @@map("notifications")
+}
+
+model Analytics {
+  id            String   @id @default(cuid())
+  metric        String
+  value         Int      @default(0)
+  label         String?
+  period        String?
+  year          Int?
+  month         Int?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("analytics")
+}
