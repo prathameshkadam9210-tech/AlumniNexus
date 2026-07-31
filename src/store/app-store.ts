@@ -2,7 +2,7 @@ import { create } from 'zustand'
 
 // Types
 export type UserRole = 'STUDENT' | 'ALUMNI' | 'RECRUITER' | 'ADMIN' | 'PLACEMENT_CELL'
-export type ViewName = 'landing' | 'dashboard' | 'jobs' | 'job-detail' | 'mentorship' | 'events' | 'profile' | 'analytics' | 'ai-assistant' | 'applications' | 'alumni-directory' | 'resume-builder' | 'post-job' | 'manage-jobs' | 'candidate-search' | 'user-management' | 'notifications'
+export type ViewName = 'landing' | 'dashboard' | 'jobs' | 'job-detail' | 'mentorship' | 'events' | 'profile' | 'analytics' | 'ai-assistant' | 'applications' | 'alumni-directory' | 'resume-builder' | 'post-job' | 'manage-jobs' | 'candidate-search' | 'user-management' | 'notifications' | 'payments' | 'certificates'
 
 export interface User {
   id: string
@@ -25,6 +25,18 @@ export interface User {
   gpa?: number | null
   isVerified: boolean
   isOnline: boolean
+  createdAt: string
+}
+
+export interface Organization {
+  id: string
+  name: string
+  code: string
+  logo?: string | null
+  website?: string | null
+  city: string
+  state: string
+  isActive: boolean
   createdAt: string
 }
 
@@ -117,6 +129,44 @@ export interface AnalyticsData {
   month?: number | null
 }
 
+export interface Payment {
+  id: string
+  userId: string
+  amount: number
+  currency: string
+  type: string
+  status: string
+  razorpayId?: string | null
+  razorpayOrderId?: string | null
+  description: string
+  referenceId?: string | null
+  createdAt: string
+}
+
+export interface Certificate {
+  id: string
+  userId: string
+  title: string
+  type: string
+  description: string
+  certificateHash: string
+  txHash?: string | null
+  issuedBy?: string | null
+  issuedAt: string
+  expiresAt?: string | null
+  isVerified: boolean
+  createdAt: string
+}
+
+export interface EventRegistration {
+  id: string
+  userId: string
+  eventId: string
+  status: string
+  createdAt: string
+  event?: EventItem
+}
+
 interface AppState {
   // Auth
   currentUser: User | null
@@ -135,6 +185,10 @@ interface AppState {
   events: EventItem[]
   notifications: NotificationItem[]
   analytics: AnalyticsData[]
+  organizations: Organization[]
+  payments: Payment[]
+  certificates: Certificate[]
+  registrations: EventRegistration[]
 
   // UI
   sidebarOpen: boolean
@@ -170,6 +224,12 @@ interface AppState {
   setAnalytics: (a: AnalyticsData[]) => void
   setUsers: (u: User[]) => void
   updateUser: (id: string, data: Partial<User>) => void
+  setOrganizations: (o: Organization[]) => void
+  setPayments: (p: Payment[]) => void
+  addPayment: (p: Payment) => void
+  setCertificates: (c: Certificate[]) => void
+  addCertificate: (c: Certificate) => void
+  setRegistrations: (r: EventRegistration[]) => void
 
   // Actions - UI
   toggleSidebar: () => void
@@ -193,6 +253,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   events: [],
   notifications: [],
   analytics: [],
+  organizations: [],
+  payments: [],
+  certificates: [],
+  registrations: [],
   sidebarOpen: false,
   searchQuery: '',
   isLoading: false,
@@ -262,6 +326,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       events: [],
       notifications: [],
       analytics: [],
+      organizations: [],
+      payments: [],
+      certificates: [],
+      registrations: [],
     })
     get().addToast('Logged out successfully', 'info')
   },
@@ -303,6 +371,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       users: s.users.map((u) => (u.id === id ? { ...u, ...data } : u)),
       currentUser: s.currentUser?.id === id ? { ...s.currentUser, ...data } : s.currentUser,
     })),
+
+  // New Data Actions
+  setOrganizations: (o) => set({ organizations: o }),
+  setPayments: (p) => set({ payments: p }),
+  addPayment: (p) => set((s) => ({ payments: [p, ...s.payments] })),
+  setCertificates: (c) => set({ certificates: c }),
+  addCertificate: (c) => set((s) => ({ certificates: [c, ...s.certificates] })),
+  setRegistrations: (r) => set({ registrations: r }),
 
   // UI Actions
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
@@ -353,6 +429,27 @@ const originalStore = useAppStore
         state.setNotifications(notifs)
       }
 
+      // Load payments for ALL roles
+      const paymentsRes = await fetch(`/api/payments?userId=${user.id}`)
+      if (paymentsRes.ok) {
+        const payments = await paymentsRes.json()
+        state.setPayments(payments)
+      }
+
+      // Load certificates for ALL roles
+      const certsRes = await fetch(`/api/certificates?userId=${user.id}`)
+      if (certsRes.ok) {
+        const certs = await certsRes.json()
+        state.setCertificates(certs)
+      }
+
+      // Load registrations for ALL roles
+      const regsRes = await fetch(`/api/registrations?userId=${user.id}`)
+      if (regsRes.ok) {
+        const regs = await regsRes.json()
+        state.setRegistrations(regs)
+      }
+
       // Role-specific data
       if (user.role === 'STUDENT') {
         const appsRes = await fetch(`/api/applications?userId=${user.id}`)
@@ -381,6 +478,10 @@ const originalStore = useAppStore
 
         const analyticsRes = await fetch('/api/analytics')
         if (analyticsRes.ok) state.setAnalytics(await analyticsRes.json())
+
+        // Load organizations for ADMIN/PLACEMENT_CELL
+        const orgsRes = await fetch('/api/organizations')
+        if (orgsRes.ok) state.setOrganizations(await orgsRes.json())
       }
     } catch (e) {
       console.error('Error loading data:', e)

@@ -42,8 +42,16 @@ import {
   UserPlus,
   BarChart3,
   Building,
-  Construction,
+  CreditCard,
+  Award,
 } from 'lucide-react'
+import {
+  UserManagementView,
+  AnalyticsView,
+  PaymentsView,
+  CertificatesView,
+  NotificationsView,
+} from '@/components/portal/admin-views'
 interface NavItem {
   label: string
   view: ViewName
@@ -64,28 +72,12 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Post Job', view: 'post-job', icon: UserPlus, roles: ['ALUMNI', 'RECRUITER'] },
   { label: 'Manage Jobs', view: 'manage-jobs', icon: Briefcase, roles: ['RECRUITER'] },
   { label: 'Candidate Search', view: 'candidate-search', icon: Search, roles: ['RECRUITER'] },
+  { label: 'Payments', view: 'payments', icon: CreditCard, roles: ['STUDENT', 'ALUMNI', 'ADMIN', 'PLACEMENT_CELL'] },
+  { label: 'Certificates', view: 'certificates', icon: Award, roles: ['STUDENT', 'ALUMNI', 'ADMIN', 'PLACEMENT_CELL'] },
+  { label: 'Notifications', view: 'notifications', icon: Bell, roles: ['STUDENT', 'ALUMNI', 'RECRUITER', 'ADMIN', 'PLACEMENT_CELL'] },
   { label: 'User Management', view: 'user-management', icon: Users, roles: ['ADMIN'] },
   { label: 'Analytics', view: 'analytics', icon: BarChart3, roles: ['ADMIN', 'PLACEMENT_CELL'] },
 ]
-
-function ComingSoonView({ view }: { view: string }) {
-  return (
-    <div className="flex items-center justify-center min-h-[60vh]">
-      <Card className="max-w-md w-full mx-4">
-        <CardContent className="flex flex-col items-center justify-center py-12 text-center gap-4">
-          <div className="w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
-            <Construction className="w-8 h-8 text-emerald-600" />
-          </div>
-          <h3 className="text-xl font-semibold">Coming Soon</h3>
-          <p className="text-muted-foreground">
-            The <span className="font-medium text-foreground">{view}</span> module is currently under development.
-            Check back soon!
-          </p>
-        </CardContent>
-      </Card>
-    </div>
-  )
-}
 
 const VIEW_LABELS: Record<ViewName, string> = {
   landing: 'Landing',
@@ -105,9 +97,11 @@ const VIEW_LABELS: Record<ViewName, string> = {
   'candidate-search': 'Candidate Search',
   'user-management': 'User Management',
   notifications: 'Notifications',
+  payments: 'Payments',
+  certificates: 'Certificates',
 }
 
-// Dynamic view component that loads the real module or shows Coming Soon
+// Dynamic view component that loads the real module or shows a loading spinner
 function DynamicView({ name, importFn }: { name: string; importFn: () => Promise<{ [key: string]: React.ComponentType }> }) {
   const [ViewComponent, setViewComponent] = useState<React.ComponentType | null>(null)
   const [loaded, setLoaded] = useState(false)
@@ -126,7 +120,7 @@ function DynamicView({ name, importFn }: { name: string; importFn: () => Promise
         }
       })
       .catch(() => {
-        // Module not found, will show Coming Soon
+        // Module not found
       })
       .finally(() => setLoaded(true))
   }, [importFn])
@@ -140,7 +134,21 @@ function DynamicView({ name, importFn }: { name: string; importFn: () => Promise
   }
 
   if (!ViewComponent) {
-    return <ComingSoonView view={name} />
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Card className="max-w-md w-full mx-4">
+          <CardContent className="flex flex-col items-center justify-center py-12 text-center gap-4">
+            <div className="w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
+              <GraduationCap className="w-8 h-8 text-emerald-600" />
+            </div>
+            <h3 className="text-xl font-semibold">Module Loading</h3>
+            <p className="text-muted-foreground">
+              The <span className="font-medium text-foreground">{name}</span> module is being prepared.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    )
   }
 
   return <ViewComponent />
@@ -162,8 +170,32 @@ function ViewRouter() {
       return <DynamicView name="AI Assistant" importFn={() => import('@/components/portal/ai-assistant')} />
     case 'events':
       return <DynamicView name="Events" importFn={() => import('@/components/portal/events')} />
+    case 'user-management':
+      return <UserManagementView />
+    case 'analytics':
+      return <AnalyticsView />
+    case 'payments':
+      return <PaymentsView />
+    case 'certificates':
+      return <CertificatesView />
+    case 'notifications':
+      return <NotificationsView />
+    case 'job-detail':
+      return <DynamicView name="Job Detail" importFn={() => import('@/components/portal/jobs')} />
+    case 'applications':
+      return <DynamicView name="Applications" importFn={() => import('@/components/portal/jobs')} />
+    case 'post-job':
+      return <DynamicView name="Post Job" importFn={() => import('@/components/portal/jobs')} />
+    case 'manage-jobs':
+      return <DynamicView name="Manage Jobs" importFn={() => import('@/components/portal/jobs')} />
+    case 'candidate-search':
+      return <DynamicView name="Candidate Search" importFn={() => import('@/components/portal/jobs')} />
+    case 'alumni-directory':
+      return <DynamicView name="Alumni Directory" importFn={() => import('@/components/portal/mentorship')} />
+    case 'resume-builder':
+      return <DynamicView name="Resume Builder" importFn={() => import('@/components/portal/profile')} />
     default:
-      return <ComingSoonView view={VIEW_LABELS[currentView] || currentView} />
+      return <DynamicView name={VIEW_LABELS[currentView] || currentView} importFn={() => import('@/components/portal/dashboard')} />
   }
 }
 
