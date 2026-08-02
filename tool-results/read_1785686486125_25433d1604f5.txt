@@ -1,0 +1,933 @@
+     1→import { PrismaClient } from '@prisma/client'
+     2→import crypto from 'crypto'
+     3→
+     4→const db = new PrismaClient()
+     5→
+     6→async function seed() {
+     7→  console.log('🌱 Seeding database with comprehensive data...\n')
+     8→
+     9→  // ─── 1. Delete all existing data in reverse dependency order ───
+    10→  console.log('🗑️  Cleaning existing data...')
+    11→  await db.eventRegistration.deleteMany()
+    12→  await db.certificate.deleteMany()
+    13→  await db.payment.deleteMany()
+    14→  await db.notification.deleteMany()
+    15→  await db.application.deleteMany()
+    16→  await db.mentorship.deleteMany()
+    17→  await db.event.deleteMany()
+    18→  await db.job.deleteMany()
+    19→  await db.analytics.deleteMany()
+    20→  await db.user.deleteMany()
+    21→  await db.organization.deleteMany()
+    22→  console.log('   ✅ All existing data deleted\n')
+    23→
+    24→  // ─── 2. Create Organizations ───
+    25→  console.log('🏢 Creating organizations...')
+    26→  const orgJJMCOE = await db.organization.create({
+    27→    data: {
+    28→      name: 'Dr. J.J. Magdum College of Engineering, Jaysingpur',
+    29→      code: 'JJMCOE',
+    30→      logo: '/logos/jjmcoe.png',
+    31→      website: 'https://jjmcoe.ac.in',
+    32→      city: 'Jaysingpur',
+    33→      state: 'Maharashtra',
+    34→      isActive: true,
+    35→    },
+    36→  })
+    37→
+    38→  const orgPICT = await db.organization.create({
+    39→    data: {
+    40→      name: 'Pune Institute of Computer Technology',
+    41→      code: 'PICT',
+    42→      logo: '/logos/pict.png',
+    43→      website: 'https://pict.edu',
+    44→      city: 'Pune',
+    45→      state: 'Maharashtra',
+    46→      isActive: true,
+    47→    },
+    48→  })
+    49→  console.log(`   ✅ Created ${await db.organization.count()} organizations\n`)
+    50→
+    51→  // ─── 3. Create JJMCOE Users (existing users) ───
+    52→  console.log('👥 Creating JJMCOE users...')
+    53→  const admin = await db.user.create({
+    54→    data: {
+    55→      email: 'admin@alumniportal.com',
+    56→      password: 'admin',
+    57→      name: 'Dr. Rajesh Kumar',
+    58→      role: 'ADMIN',
+    59→      department: 'Administration',
+    60→      phone: '+91 9876543210',
+    61→      bio: 'Dean of Student Affairs overseeing the alumni portal initiative.',
+    62→      isVerified: true,
+    63→      organizationId: orgJJMCOE.id,
+    64→    },
+    65→  })
+    66→
+    67→  const placement = await db.user.create({
+    68→    data: {
+    69→      email: 'placement@alumniportal.com',
+    70→      password: 'placement',
+    71→      name: 'Prof. Anita Deshmukh',
+    72→      role: 'PLACEMENT_CELL',
+    73→      department: 'Training & Placement',
+    74→      phone: '+91 9876543211',
+    75→      bio: 'Placement Officer with 10+ years of experience in campus recruitment.',
+    76→      isVerified: true,
+    77→      organizationId: orgJJMCOE.id,
+    78→    },
+    79→  })
+    80→
+    81→  const student1 = await db.user.create({
+    82→    data: {
+    83→      email: 'aditya@student.edu',
+    84→      password: 'demo',
+    85→      name: 'Aditya Gudimani',
+    86→      role: 'STUDENT',
+    87→      department: 'Information Technology',
+    88→      batch: '2024-2028',
+    89→      graduationYear: 2028,
+    90→      phone: '+91 9876543212',
+    91→      bio: 'Passionate full-stack developer with interest in AI/ML. Active in coding competitions and open source.',
+    92→      location: 'Jaysingpur, Maharashtra',
+    93→      skills: '["React", "Next.js", "TypeScript", "Tailwind CSS", "Node.js", "Python", "MongoDB", "Git"]',
+    94→      gpa: 8.7,
+    95→      linkedinUrl: 'https://linkedin.com/in/aditya',
+    96→      isVerified: true,
+    97→      organizationId: orgJJMCOE.id,
+    98→    },
+    99→  })
+   100→
+   101→  const student2 = await db.user.create({
+   102→    data: {
+   103→      email: 'somnath@student.edu',
+   104→      password: 'demo',
+   105→      name: 'Somnath Jadhav',
+   106→      role: 'STUDENT',
+   107→      department: 'Information Technology',
+   108→      batch: '2024-2028',
+   109→      graduationYear: 2028,
+   110→      phone: '+91 9876543213',
+   111→      bio: 'Data science enthusiast with strong analytical skills. Interested in machine learning and NLP.',
+   112→      location: 'Kolhapur, Maharashtra',
+   113→      skills: '["Python", "Machine Learning", "Data Analysis", "SQL", "TensorFlow", "Pandas", "Flask"]',
+   114→      gpa: 8.9,
+   115→      linkedinUrl: 'https://linkedin.com/in/somnath',
+   116→      isVerified: true,
+   117→      organizationId: orgJJMCOE.id,
+   118→    },
+   119→  })
+   120→
+   121→  const student3 = await db.user.create({
+   122→    data: {
+   123→      email: 'prathamesh@student.edu',
+   124→      password: 'demo',
+   125→      name: 'Prathamesh Kadam',
+   126→      role: 'STUDENT',
+   127→      department: 'Computer Science',
+   128→      batch: '2024-2028',
+   129→      graduationYear: 2028,
+   130→      phone: '+91 9876543214',
+   131→      bio: 'Backend developer specializing in cloud technologies and DevOps practices.',
+   132→      location: 'Sangli, Maharashtra',
+   133→      skills: '["Java", "Spring Boot", "AWS", "Docker", "Kubernetes", "PostgreSQL", "Linux"]',
+   134→      gpa: 8.3,
+   135→      isVerified: true,
+   136→      organizationId: orgJJMCOE.id,
+   137→    },
+   138→  })
+   139→
+   140→  const alumni1 = await db.user.create({
+   141→    data: {
+   142→      email: 'rahul@alumni.edu',
+   143→      password: 'demo',
+   144→      name: 'Rahul Patil',
+   145→      role: 'ALUMNI',
+   146→      department: 'Information Technology',
+   147→      batch: '2018-2022',
+   148→      graduationYear: 2022,
+   149→      phone: '+91 9876543215',
+   150→      bio: 'Senior Software Engineer at TCS with expertise in cloud-native applications. Passionate about mentoring juniors.',
+   151→      company: 'Tata Consultancy Services',
+   152→      designation: 'Senior Software Engineer',
+   153→      experience: '3 years',
+   154→      location: 'Pune, Maharashtra',
+   155→      skills: '["Java", "Spring Boot", "AWS", "Microservices", "Angular", "Docker"]',
+   156→      linkedinUrl: 'https://linkedin.com/in/rahul',
+   157→      isVerified: true,
+   158→      organizationId: orgJJMCOE.id,
+   159→    },
+   160→  })
+   161→
+   162→  const alumni2 = await db.user.create({
+   163→    data: {
+   164→      email: 'priya@alumni.edu',
+   165→      password: 'demo',
+   166→      name: 'Priya Sharma',
+   167→      role: 'ALUMNI',
+   168→      department: 'Computer Science',
+   169→      batch: '2019-2023',
+   170→      graduationYear: 2023,
+   171→      phone: '+91 9876543216',
+   172→      bio: 'Data Scientist at Infosys working on NLP and computer vision projects. Active open-source contributor.',
+   173→      company: 'Infosys',
+   174→      designation: 'Data Scientist',
+   175→      experience: '2 years',
+   176→      location: 'Bangalore, Karnataka',
+   177→      skills: '["Python", "TensorFlow", "PyTorch", "NLP", "Computer Vision", "SQL", "AWS"]',
+   178→      linkedinUrl: 'https://linkedin.com/in/priya',
+   179→      isVerified: true,
+   180→      organizationId: orgJJMCOE.id,
+   181→    },
+   182→  })
+   183→
+   184→  const alumni3 = await db.user.create({
+   185→    data: {
+   186→      email: 'vikram@alumni.edu',
+   187→      password: 'demo',
+   188→      name: 'Vikram Mehta',
+   189→      role: 'ALUMNI',
+   190→      department: 'Information Technology',
+   191→      batch: '2017-2021',
+   192→      graduationYear: 2021,
+   193→      phone: '+91 9876543217',
+   194→      bio: 'Product Manager at Razorpay. Previously co-founded a fintech startup.',
+   195→      company: 'Razorpay',
+   196→      designation: 'Product Manager',
+   197→      experience: '4 years',
+   198→      location: 'Bangalore, Karnataka',
+   199→      skills: '["Product Management", "Agile", "SQL", "Data Analysis", "UX Design", "Strategy"]',
+   200→      linkedinUrl: 'https://linkedin.com/in/vikram',
+   201→      isVerified: true,
+   202→      organizationId: orgJJMCOE.id,
+   203→    },
+   204→  })
+   205→
+   206→  const recruiter1 = await db.user.create({
+   207→    data: {
+   208→      email: 'hr@tcs.com',
+   209→      password: 'demo',
+   210→      name: 'Meghna Iyer',
+   211→      role: 'RECRUITER',
+   212→      department: 'Human Resources',
+   213→      phone: '+91 9876543218',
+   214→      bio: 'Talent Acquisition Specialist at TCS. Looking for talented engineering graduates.',
+   215→      company: 'Tata Consultancy Services',
+   216→      designation: 'Talent Acquisition Specialist',
+   217→      location: 'Mumbai, Maharashtra',
+   218→      isVerified: true,
+   219→      organizationId: orgJJMCOE.id,
+   220→    },
+   221→  })
+   222→
+   223→  const recruiter2 = await db.user.create({
+   224→    data: {
+   225→      email: 'careers@infosys.com',
+   226→      password: 'demo',
+   227→      name: 'Arun Nair',
+   228→      role: 'RECRUITER',
+   229→      department: 'Recruitment',
+   230→      phone: '+91 9876543219',
+   231→      bio: 'Campus Recruiter at Infosys focused on hiring top engineering talent.',
+   232→      company: 'Infosys',
+   233→      designation: 'Campus Recruiter',
+   234→      location: 'Pune, Maharashtra',
+   235→      isVerified: true,
+   236→      organizationId: orgJJMCOE.id,
+   237→    },
+   238→  })
+   239→
+   240→  // ─── 4. Create PICT Users (2 students + 2 alumni) ───
+   241→  console.log('👥 Creating PICT users...')
+   242→  const pictStudent1 = await db.user.create({
+   243→    data: {
+   244→      email: 'ananya@pict.edu',
+   245→      password: 'demo',
+   246→      name: 'Ananya Kulkarni',
+   247→      role: 'STUDENT',
+   248→      department: 'Computer Engineering',
+   249→      batch: '2023-2027',
+   250→      graduationYear: 2027,
+   251→      phone: '+91 9876543220',
+   252→      bio: 'Full-stack developer and competitive programmer. Active in hackathons and open-source contributions. President of the coding club.',
+   253→      location: 'Pune, Maharashtra',
+   254→      skills: '["C++", "JavaScript", "React", "Node.js", "PostgreSQL", "GraphQL", "Docker", "TypeScript"]',
+   255→      gpa: 9.1,
+   256→      linkedinUrl: 'https://linkedin.com/in/ananya-kulkarni',
+   257→      isVerified: true,
+   258→      organizationId: orgPICT.id,
+   259→    },
+   260→  })
+   261→
+   262→  const pictStudent2 = await db.user.create({
+   263→    data: {
+   264→      email: 'rohan@pict.edu',
+   265→      password: 'demo',
+   266→      name: 'Rohan Deshpande',
+   267→      role: 'STUDENT',
+   268→      department: 'Information Technology',
+   269→      batch: '2023-2027',
+   270→      graduationYear: 2027,
+   271→      phone: '+91 9876543221',
+   272→      bio: 'Cybersecurity enthusiast and ethical hacker. CTF player and winner of multiple national-level competitions.',
+   273→      location: 'Pune, Maharashtra',
+   274→      skills: '["Python", "Network Security", "Cryptography", "Linux", "Kali Linux", "Wireshark", "Bash", "Go"]',
+   275→      gpa: 8.5,
+   276→      linkedinUrl: 'https://linkedin.com/in/rohan-deshpande',
+   277→      isVerified: true,
+   278→      organizationId: orgPICT.id,
+   279→    },
+   280→  })
+   281→
+   282→  const pictAlumni1 = await db.user.create({
+   283→    data: {
+   284→      email: 'neha@pict-alumni.edu',
+   285→      password: 'demo',
+   286→      name: 'Neha Joshi',
+   287→      role: 'ALUMNI',
+   288→      department: 'Computer Engineering',
+   289→      batch: '2017-2021',
+   290→      graduationYear: 2021,
+   291→      phone: '+91 9876543222',
+   292→      bio: 'Engineering Manager at Google leading the Chrome DevTools team. Open-source advocate and tech speaker at international conferences.',
+   293→      company: 'Google',
+   294→      designation: 'Engineering Manager',
+   295→      experience: '5 years',
+   296→      location: 'Mountain View, California',
+   297→      skills: '["C++", "JavaScript", "Leadership", "System Design", "DevTools", "Chromium", "Performance Optimization"]',
+   298→      linkedinUrl: 'https://linkedin.com/in/neha-joshi',
+   299→      isVerified: true,
+   300→      organizationId: orgPICT.id,
+   301→    },
+   302→  })
+   303→
+   304→  const pictAlumni2 = await db.user.create({
+   305→    data: {
+   306→      email: 'siddharth@pict-alumni.edu',
+   307→      password: 'demo',
+   308→      name: 'Siddharth Rane',
+   309→      role: 'ALUMNI',
+   310→      department: 'Information Technology',
+   311→      batch: '2019-2023',
+   312→      graduationYear: 2023,
+   313→      phone: '+91 9876543223',
+   314→      bio: 'Machine Learning Engineer at Microsoft Research India. Published researcher in NeurIPS and ICML. Passionate about mentoring.',
+   315→      company: 'Microsoft',
+   316→      designation: 'ML Engineer',
+   317→      experience: '2 years',
+   318→      location: 'Bangalore, Karnataka',
+   319→      skills: '["Python", "PyTorch", "Deep Learning", "NLP", "Research", "CUDA", "Distributed Systems"]',
+   320→      linkedinUrl: 'https://linkedin.com/in/siddharth-rane',
+   321→      isVerified: true,
+   322→      organizationId: orgPICT.id,
+   323→    },
+   324→  })
+   325→  console.log(`   ✅ Created ${await db.user.count()} users (${await db.user.count({ where: { organizationId: orgJJMCOE.id } })} JJMCOE + ${await db.user.count({ where: { organizationId: orgPICT.id } })} PICT)\n`)
+   326→
+   327→  // ─── 5. Create Jobs (6 existing) ───
+   328→  console.log('💼 Creating jobs...')
+   329→  const job1 = await db.job.create({
+   330→    data: {
+   331→      title: 'Full Stack Developer',
+   332→      company: 'Tata Consultancy Services',
+   333→      location: 'Pune, Maharashtra',
+   334→      type: 'FULL_TIME',
+   335→      salaryMin: 600000,
+   336→      salaryMax: 1200000,
+   337→      currency: 'INR',
+   338→      description: 'We are looking for a motivated Full Stack Developer to join our dynamic team. You will work on building scalable web applications using modern technologies including React, Node.js, and cloud services. The ideal candidate should be passionate about clean code and continuous learning.',
+   339→      requirements: 'B.Tech/B.E. in CS/IT with strong programming fundamentals. Experience with React, Node.js, and databases. Knowledge of cloud platforms (AWS/GCP/Azure) is a plus.',
+   340→      skills: '["React", "Node.js", "TypeScript", "MongoDB", "AWS", "Git"]',
+   341→      experienceRequired: '0-2 years',
+   342→      postedById: recruiter1.id,
+   343→      status: 'OPEN',
+   344→      deadline: new Date('2026-09-30'),
+   345→      applicantsCount: 0,
+   346→    },
+   347→  })
+   348→
+   349→  const job2 = await db.job.create({
+   350→    data: {
+   351→      title: 'Data Science Intern',
+   352→      company: 'Infosys',
+   353→      location: 'Bangalore, Karnataka',
+   354→      type: 'INTERNSHIP',
+   355→      salaryMin: 25000,
+   356→      salaryMax: 40000,
+   357→      currency: 'INR',
+   358→      description: 'Join our Data Science team for a 6-month internship program. You will work on real-world projects involving machine learning, data analysis, and NLP. This is an excellent opportunity to kickstart your data science career with mentorship from senior data scientists.',
+   359→      requirements: 'Pursuing B.Tech/M.Tech in CS/IT/Statistics. Strong Python programming skills. Knowledge of ML libraries (scikit-learn, TensorFlow). Good analytical and problem-solving abilities.',
+   360→      skills: '["Python", "Machine Learning", "Data Analysis", "SQL", "TensorFlow", "Pandas"]',
+   361→      experienceRequired: '0-1 years',
+   362→      postedById: recruiter2.id,
+   363→      status: 'OPEN',
+   364→      deadline: new Date('2026-08-31'),
+   365→      applicantsCount: 0,
+   366→    },
+   367→  })
+   368→
+   369→  const job3 = await db.job.create({
+   370→    data: {
+   371→      title: 'Cloud Engineer',
+   372→      company: 'Tata Consultancy Services',
+   373→      location: 'Mumbai, Maharashtra',
+   374→      type: 'FULL_TIME',
+   375→      salaryMin: 800000,
+   376→      salaryMax: 1500000,
+   377→      currency: 'INR',
+   378→      description: 'Looking for a Cloud Engineer to design, deploy, and manage cloud infrastructure. You will work with AWS/Azure services, implement CI/CD pipelines, and ensure system reliability and scalability for enterprise clients.',
+   379→      requirements: 'B.Tech in CS/IT with cloud certification (AWS/Azure/GCP). Experience with Docker, Kubernetes, and IaC tools. Strong understanding of networking and security concepts.',
+   380→      skills: '["AWS", "Docker", "Kubernetes", "Terraform", "CI/CD", "Python"]',
+   381→      experienceRequired: '1-3 years',
+   382→      postedById: recruiter1.id,
+   383→      status: 'OPEN',
+   384→      deadline: new Date('2026-10-15'),
+   385→      applicantsCount: 0,
+   386→    },
+   387→  })
+   388→
+   389→  const job4 = await db.job.create({
+   390→    data: {
+   391→      title: 'Frontend Developer Intern',
+   392→      company: 'Persistent Systems',
+   393→      location: 'Pune, Maharashtra',
+   394→      type: 'INTERNSHIP',
+   395→      salaryMin: 20000,
+   396→      salaryMax: 35000,
+   397→      currency: 'INR',
+   398→      description: '3-month internship for aspiring frontend developers. Work with React, TypeScript, and modern CSS to build beautiful, responsive user interfaces for enterprise applications used by Fortune 500 companies.',
+   399→      requirements: 'B.Tech in CS/IT (2nd/3rd year). Strong HTML, CSS, and JavaScript fundamentals. Knowledge of React is a plus. Eye for design and attention to detail.',
+   400→      skills: '["React", "TypeScript", "Tailwind CSS", "HTML", "CSS", "JavaScript"]',
+   401→      experienceRequired: '0 years',
+   402→      postedById: recruiter1.id,
+   403→      status: 'OPEN',
+   404→      deadline: new Date('2026-09-15'),
+   405→      applicantsCount: 0,
+   406→    },
+   407→  })
+   408→
+   409→  const job5 = await db.job.create({
+   410→    data: {
+   411→      title: 'Backend Developer',
+   412→      company: 'Infosys',
+   413→      location: 'Hyderabad, Telangana',
+   414→      type: 'FULL_TIME',
+   415→      salaryMin: 700000,
+   416→      salaryMax: 1300000,
+   417→      currency: 'INR',
+   418→      description: 'Join our backend engineering team to build robust, scalable APIs and microservices. Work with Java/Spring Boot, PostgreSQL, and cloud services to power enterprise applications serving millions of users.',
+   419→      requirements: 'B.Tech/M.Tech in CS/IT. Strong Java/Spring Boot skills. Experience with RESTful APIs and databases. Knowledge of message queues and caching is a bonus.',
+   420→      skills: '["Java", "Spring Boot", "PostgreSQL", "REST APIs", "Redis", "Docker"]',
+   421→      experienceRequired: '1-3 years',
+   422→      postedById: recruiter2.id,
+   423→      status: 'OPEN',
+   424→      deadline: new Date('2026-10-31'),
+   425→      applicantsCount: 0,
+   426→    },
+   427→  })
+   428→
+   429→  const job6 = await db.job.create({
+   430→    data: {
+   431→      title: 'DevOps Engineer',
+   432→      company: 'Razorpay',
+   433→      location: 'Bangalore, Karnataka',
+   434→      type: 'FULL_TIME',
+   435→      salaryMin: 1200000,
+   436→      salaryMax: 2200000,
+   437→      currency: 'INR',
+   438→      description: 'Build and maintain the infrastructure that powers millions of transactions daily. Work with cutting-edge tools and practices in a fast-paced fintech environment. Opportunity to work on complex distributed systems at scale.',
+   439→      requirements: 'B.Tech in CS/IT. Expert in Docker, Kubernetes, CI/CD pipelines. Strong Linux and networking skills. Experience with monitoring tools (Prometheus, Grafana).',
+   440→      skills: '["Kubernetes", "Docker", "CI/CD", "AWS", "Terraform", "Prometheus"]',
+   441→      experienceRequired: '2-4 years',
+   442→      postedById: recruiter1.id,
+   443→      status: 'OPEN',
+   444→      deadline: new Date('2026-11-30'),
+   445→      applicantsCount: 0,
+   446→    },
+   447→  })
+   448→  console.log(`   ✅ Created ${await db.job.count()} jobs\n`)
+   449→
+   450→  // ─── 6. Create Applications (5 existing + 2 PICT) ───
+   451→  console.log('📋 Creating applications...')
+   452→  await db.application.createMany({
+   453→    data: [
+   454→      {
+   455→        userId: student1.id,
+   456→        jobId: job1.id,
+   457→        status: 'PENDING',
+   458→        coverLetter: 'I am excited to apply for the Full Stack Developer position. My experience with React, Node.js, and cloud services makes me a strong candidate for this role.',
+   459→      },
+   460→      {
+   461→        userId: student1.id,
+   462→        jobId: job4.id,
+   463→        status: 'ACCEPTED',
+   464→        coverLetter: 'I would love to intern as a Frontend Developer. I have built multiple projects using React and Tailwind CSS and am eager to contribute to enterprise applications.',
+   465→      },
+   466→      {
+   467→        userId: student2.id,
+   468→        jobId: job2.id,
+   469→        status: 'PENDING',
+   470→        coverLetter: 'As a data science enthusiast, this internship at Infosys is perfect for me. My skills in Python and ML align well with the requirements.',
+   471→      },
+   472→      {
+   473→        userId: student3.id,
+   474→        jobId: job3.id,
+   475→        status: 'REVIEWED',
+   476→        coverLetter: 'My expertise in cloud technologies and DevOps practices makes me an ideal fit for the Cloud Engineer role.',
+   477→      },
+   478→      {
+   479→        userId: student3.id,
+   480→        jobId: job5.id,
+   481→        status: 'PENDING',
+   482→        coverLetter: 'I have strong Java/Spring Boot skills and have built multiple backend applications during my coursework.',
+   483→      },
+   484→      {
+   485→        userId: pictStudent1.id,
+   486→        jobId: job1.id,
+   487→        status: 'PENDING',
+   488→        coverLetter: 'As a Computer Engineering student at PICT with a 9.1 GPA and strong full-stack skills, I believe I can contribute meaningfully to TCS. I have won 3 hackathons and contributed to 2 open-source projects.',
+   489→      },
+   490→      {
+   491→        userId: pictStudent2.id,
+   492→        jobId: job3.id,
+   493→        status: 'PENDING',
+   494→        coverLetter: 'My specialization in cybersecurity and cloud infrastructure aligns perfectly with the Cloud Engineer role. I hold CompTIA Security+ certification and have hands-on experience with AWS.',
+   495→      },
+   496→    ],
+   497→  })
+   498→
+   499→  // Update applicant counts
+   500→  await db.job.update({ where: { id: job1.id }, data: { applicantsCount: 2 } })
+   501→  await db.job.update({ where: { id: job2.id }, data: { applicantsCount: 1 } })
+   502→  await db.job.update({ where: { id: job3.id }, data: { applicantsCount: 2 } })
+   503→  await db.job.update({ where: { id: job4.id }, data: { applicantsCount: 1 } })
+   504→  await db.job.update({ where: { id: job5.id }, data: { applicantsCount: 1 } })
+   505→  console.log(`   ✅ Created ${await db.application.count()} applications\n`)
+   506→
+   507→  // ─── 7. Create Mentorships (3 existing + 1 new) ───
+   508→  console.log('🤝 Creating mentorships...')
+   509→  await db.mentorship.createMany({
+   510→    data: [
+   511→      {
+   512→        mentorId: alumni1.id,
+   513→        menteeId: student1.id,
+   514→        date: new Date('2026-08-10'),
+   515→        timeSlot: '10:00 AM - 10:30 AM',
+   516→        duration: 30,
+   517→        status: 'ACCEPTED',
+   518→        topic: 'Career guidance in full-stack development',
+   519→        mentorName: alumni1.name,
+   520→        menteeName: student1.name,
+   521→      },
+   522→      {
+   523→        mentorId: alumni2.id,
+   524→        menteeId: student2.id,
+   525→        date: new Date('2026-08-12'),
+   526→        timeSlot: '3:00 PM - 3:30 PM',
+   527→        duration: 30,
+   528→        status: 'PENDING',
+   529→        topic: 'Getting started with data science career',
+   530→        mentorName: alumni2.name,
+   531→        menteeName: student2.name,
+   532→      },
+   533→      {
+   534→        mentorId: alumni3.id,
+   535→        menteeId: student3.id,
+   536→        date: new Date('2026-08-15'),
+   537→        timeSlot: '11:00 AM - 11:30 AM',
+   538→        duration: 30,
+   539→        status: 'ACCEPTED',
+   540→        topic: 'Product management as a career path',
+   541→        mentorName: alumni3.name,
+   542→        menteeName: student3.name,
+   543→      },
+   544→      {
+   545→        mentorId: pictAlumni1.id,
+   546→        menteeId: pictStudent1.id,
+   547→        date: new Date('2026-09-01'),
+   548→        timeSlot: '6:00 PM - 6:45 PM',
+   549→        duration: 45,
+   550→        status: 'PENDING',
+   551→        topic: 'Breaking into big tech - Google interview preparation and system design',
+   552→        mentorName: pictAlumni1.name,
+   553→        menteeName: pictStudent1.name,
+   554→      },
+   555→    ],
+   556→  })
+   557→  console.log(`   ✅ Created ${await db.mentorship.count()} mentorships\n`)
+   558→
+   559→  // ─── 8. Create Events (5 existing + 2 new = 7 total) ───
+   560→  console.log('📅 Creating events...')
+   561→  const event1 = await db.event.create({
+   562→    data: {
+   563→      title: 'AI & Machine Learning Workshop',
+   564→      description: 'A hands-on workshop covering fundamental AI/ML concepts, practical implementations using Python and TensorFlow, and real-world case studies. Perfect for students looking to break into AI careers.',
+   565→      date: new Date('2026-08-20'),
+   566→      time: '10:00 AM - 4:00 PM',
+   567→      location: 'IT Seminar Hall, Block A',
+   568→      type: 'WORKSHOP',
+   569→      organizerId: placement.id,
+   570→      maxAttendees: 100,
+   571→      currentAttendees: 67,
+   572→      isFeatured: true,
+   573→      price: 0,
+   574→      currency: 'INR',
+   575→      organizationId: orgJJMCOE.id,
+   576→    },
+   577→  })
+   578→
+   579→  const event2 = await db.event.create({
+   580→    data: {
+   581→      title: 'TCS Campus Recruitment Drive 2026',
+   582→      description: 'Annual campus recruitment drive by TCS for final year students. Multiple positions available across technology domains. Pre-placement talk followed by online assessment and interviews.',
+   583→      date: new Date('2026-09-05'),
+   584→      time: '9:00 AM - 5:00 PM',
+   585→      location: 'Main Auditorium',
+   586→      type: 'CAMPUS_DRIVE',
+   587→      organizerId: placement.id,
+   588→      maxAttendees: 200,
+   589→      currentAttendees: 145,
+   590→      isFeatured: true,
+   591→      price: 0,
+   592→      currency: 'INR',
+   593→      organizationId: orgJJMCOE.id,
+   594→    },
+   595→  })
+   596→
+   597→  const event3 = await db.event.create({
+   598→    data: {
+   599→      title: 'Alumni Connect: Industry Insights Panel',
+   600→      description: 'Join our distinguished alumni panel featuring professionals from TCS, Infosys, and Razorpay as they share career insights, industry trends, and tips for placement preparation.',
+   601→      date: new Date('2026-08-25'),
+   602→      time: '2:00 PM - 4:00 PM',
+   603→      location: 'Virtual (Zoom)',
+   604→      type: 'SEMINAR',
+   605→      organizerId: admin.id,
+   606→      maxAttendees: 150,
+   607→      currentAttendees: 89,
+   608→      isFeatured: true,
+   609→      price: 0,
+   610→      currency: 'INR',
+   611→      organizationId: orgJJMCOE.id,
+   612→    },
+   613→  })
+   614→
+   615→  const event4 = await db.event.create({
+   616→    data: {
+   617→      title: 'Resume Building Masterclass',
+   618→      description: 'Learn how to craft an ATS-friendly resume that stands out. Topics include resume formatting, keyword optimization, highlighting achievements, and tailoring for specific roles.',
+   619→      date: new Date('2026-08-18'),
+   620→      time: '11:00 AM - 1:00 PM',
+   621→      location: 'IT Lab, Room 301',
+   622→      type: 'WORKSHOP',
+   623→      organizerId: placement.id,
+   624→      maxAttendees: 50,
+   625→      currentAttendees: 42,
+   626→      isFeatured: false,
+   627→      price: 0,
+   628→      currency: 'INR',
+   629→      organizationId: orgJJMCOE.id,
+   630→    },
+   631→  })
+   632→
+   633→  const event5 = await db.event.create({
+   634→    data: {
+   635→      title: 'Web Development Bootcamp - Week 1',
+   636→      description: 'First week of our intensive 4-week web development bootcamp. Covering HTML, CSS, JavaScript fundamentals and introduction to React.',
+   637→      date: new Date('2026-08-15'),
+   638→      time: '10:00 AM - 1:00 PM',
+   639→      location: 'Computer Lab 2',
+   640→      type: 'WORKSHOP',
+   641→      organizerId: admin.id,
+   642→      maxAttendees: 40,
+   643→      currentAttendees: 38,
+   644→      isFeatured: false,
+   645→      price: 0,
+   646→      currency: 'INR',
+   647→      organizationId: orgJJMCOE.id,
+   648→    },
+   649→  })
+   650→
+   651→  // New event 6: Paid workshop
+   652→  const event6 = await db.event.create({
+   653→    data: {
+   654→      title: 'Full-Stack Development with Next.js - Premium Workshop',
+   655→      description: 'An intensive 2-day premium workshop on building production-grade applications with Next.js 15, TypeScript, Prisma, and Tailwind CSS. Includes hands-on projects, code reviews, and a certificate of completion. Lunch and study materials included.',
+   656→      date: new Date('2026-09-20'),
+   657→      time: '9:00 AM - 5:00 PM',
+   658→      location: 'Main Seminar Hall',
+   659→      type: 'WORKSHOP',
+   660→      organizerId: admin.id,
+   661→      maxAttendees: 60,
+   662→      currentAttendees: 23,
+   663→      isFeatured: true,
+   664→      price: 499,
+   665→      currency: 'INR',
+   666→      organizationId: orgJJMCOE.id,
+   667→    },
+   668→  })
+   669→
+   670→  // New event 7: Paid conference (PICT)
+   671→  const event7 = await db.event.create({
+   672→    data: {
+   673→      title: 'PICT Tech Summit 2026: AI & Future of Work',
+   674→      description: 'Annual flagship technology conference featuring keynotes from industry leaders at Google, Microsoft, and Amazon. Topics include Generative AI, quantum computing, and the future of software engineering. Includes networking lunch and swag kit.',
+   675→      date: new Date('2026-10-10'),
+   676→      time: '9:00 AM - 6:00 PM',
+   677→      location: 'PICT Convention Center, Pune',
+   678→      type: 'CONFERENCE',
+   679→      organizerId: admin.id,
+   680→      maxAttendees: 300,
+   681→      currentAttendees: 87,
+   682→      isFeatured: true,
+   683→      price: 999,
+   684→      currency: 'INR',
+   685→      organizationId: orgPICT.id,
+   686→    },
+   687→  })
+   688→  console.log(`   ✅ Created ${await db.event.count()} events (2 paid)\n`)
+   689→
+   690→  // ─── 9. Create Event Registrations (12 total) ───
+   691→  console.log('🎟️  Creating event registrations...')
+   692→  await db.eventRegistration.createMany({
+   693→    data: [
+   694→      // Event 1: AI Workshop - JJMCOE students
+   695→      { userId: student1.id, eventId: event1.id, status: 'REGISTERED' },
+   696→      { userId: student2.id, eventId: event1.id, status: 'REGISTERED' },
+   697→      { userId: student3.id, eventId: event1.id, status: 'REGISTERED' },
+   698→      // Event 2: TCS Drive - JJMCOE students
+   699→      { userId: student1.id, eventId: event2.id, status: 'REGISTERED' },
+   700→      { userId: student3.id, eventId: event2.id, status: 'REGISTERED' },
+   701→      // Event 3: Alumni Panel - students + alumni
+   702→      { userId: student2.id, eventId: event3.id, status: 'REGISTERED' },
+   703→      { userId: alumni1.id, eventId: event3.id, status: 'REGISTERED' },
+   704→      // Event 4: Resume Masterclass
+   705→      { userId: student1.id, eventId: event4.id, status: 'REGISTERED' },
+   706→      // Event 6: Paid Next.js Workshop
+   707→      { userId: student1.id, eventId: event6.id, status: 'REGISTERED' },
+   708→      { userId: student2.id, eventId: event6.id, status: 'REGISTERED' },
+   709→      // Event 7: PICT Tech Summit - PICT users + JJMCOE users
+   710→      { userId: pictStudent1.id, eventId: event7.id, status: 'REGISTERED' },
+   711→      { userId: pictStudent2.id, eventId: event7.id, status: 'REGISTERED' },
+   712→    ],
+   713→  })
+   714→  console.log(`   ✅ Created ${await db.eventRegistration.count()} event registrations\n`)
+   715→
+   716→  // ─── 10. Create Notifications (10 existing + more for PICT) ───
+   717→  console.log('🔔 Creating notifications...')
+   718→  await db.notification.createMany({
+   719→    data: [
+   720→      // Existing JJMCOE notifications
+   721→      { userId: student1.id, title: 'Application Accepted', message: 'Your application for Frontend Developer Intern at Persistent Systems has been accepted!', type: 'SUCCESS', isRead: false },
+   722→      { userId: student1.id, title: 'New Job Posted', message: 'TCS has posted a new Full Stack Developer position. Apply before September 30th!', type: 'INFO', isRead: false },
+   723→      { userId: student1.id, title: 'Mentorship Confirmed', message: 'Your mentorship session with Rahul Patil is confirmed for August 10 at 10:00 AM.', type: 'INFO', isRead: true },
+   724→      { userId: student2.id, title: 'Workshop Reminder', message: 'AI & ML Workshop is coming up on August 20. Do not forget to register!', type: 'REMINDER', isRead: false },
+   725→      { userId: student2.id, title: 'Mentorship Request Sent', message: 'Your mentorship request to Priya Sharma has been sent.', type: 'INFO', isRead: false },
+   726→      { userId: admin.id, title: 'New User Registered', message: 'A new student Aditya Gudimani has registered on the portal.', type: 'INFO', isRead: false },
+   727→      { userId: admin.id, title: 'Campus Drive Approved', message: 'TCS Campus Drive for September 5 has been approved.', type: 'SUCCESS', isRead: true },
+   728→      { userId: recruiter1.id, title: 'New Application', message: 'Aditya Gudimani has applied for the Full Stack Developer position.', type: 'INFO', isRead: false },
+   729→      { userId: recruiter1.id, title: 'Job Expiring Soon', message: 'Your job posting "Frontend Developer Intern" expires on September 15.', type: 'REMINDER', isRead: false },
+   730→      { userId: alumni1.id, title: 'Mentorship Request', message: 'Aditya Gudimani has requested a mentorship session with you.', type: 'INFO', isRead: true },
+   731→      // New PICT notifications
+   732→      { userId: pictStudent1.id, title: 'Welcome to AlumniPortal!', message: 'Welcome Ananya! Your PICT account has been verified. Explore jobs, events, and mentorship opportunities.', type: 'SUCCESS', isRead: false },
+   733→      { userId: pictStudent1.id, title: 'Mentorship Request Pending', message: 'Your mentorship request to Neha Joshi (Google) is awaiting a response.', type: 'INFO', isRead: false },
+   734→      { userId: pictStudent2.id, title: 'Welcome to AlumniPortal!', message: 'Welcome Rohan! Your PICT account has been verified. Start connecting with alumni and applying for positions.', type: 'SUCCESS', isRead: true },
+   735→      { userId: pictStudent2.id, title: 'Tech Summit Registration Open', message: 'PICT Tech Summit 2026 tickets are now available. Register early for INR 999!', type: 'INFO', isRead: false },
+   736→      { userId: pictAlumni1.id, title: 'Mentorship Request Received', message: 'Ananya Kulkarni has requested a mentorship session with you on breaking into big tech.', type: 'INFO', isRead: false },
+   737→      { userId: pictAlumni2.id, title: 'Alumni Profile Verified', message: 'Your PICT alumni profile has been verified. Students can now discover you for mentorship.', type: 'SUCCESS', isRead: true },
+   738→    ],
+   739→  })
+   740→  console.log(`   ✅ Created ${await db.notification.count()} notifications\n`)
+   741→
+   742→  // ─── 11. Create Payments (8 total) ───
+   743→  console.log('💰 Creating payments...')
+   744→  await db.payment.createMany({
+   745→    data: [
+   746→      {
+   747→        userId: student1.id,
+   748→        amount: 499,
+   749→        currency: 'INR',
+   750→        type: 'EVENT',
+   751→        status: 'COMPLETED',
+   752→        razorpayId: 'pay_RzP1k2m3n4o5p6',
+   753→        razorpayOrderId: 'order_RzO1a2b3c4d5e6',
+   754→        description: 'Registration for Full-Stack Development with Next.js - Premium Workshop',
+   755→        referenceId: event6.id,
+   756→      },
+   757→      {
+   758→        userId: student2.id,
+   759→        amount: 499,
+   760→        currency: 'INR',
+   761→        type: 'EVENT',
+   762→        status: 'COMPLETED',
+   763→        razorpayId: 'pay_RzQ7x8y9z0a1b2',
+   764→        razorpayOrderId: 'order_RzP2f3g4h5i6j7',
+   765→        description: 'Registration for Full-Stack Development with Next.js - Premium Workshop',
+   766→        referenceId: event6.id,
+   767→      },
+   768→      {
+   769→        userId: pictStudent1.id,
+   770→        amount: 999,
+   771→        currency: 'INR',
+   772→        type: 'EVENT',
+   773→        status: 'COMPLETED',
+   774→        razorpayId: 'pay_RzR3c4d5e6f7g8',
+   775→        razorpayOrderId: 'order_RzQ8k9l0m1n2o3',
+   776→        description: 'Registration for PICT Tech Summit 2026: AI & Future of Work',
+   777→        referenceId: event7.id,
+   778→      },
+   779→      {
+   780→        userId: pictStudent2.id,
+   781→        amount: 999,
+   782→        currency: 'INR',
+   783→        type: 'EVENT',
+   784→        status: 'COMPLETED',
+   785→        razorpayId: 'pay_RzS9h0i1j2k3l4',
+   786→        razorpayOrderId: 'order_RzR4p5q6r7s8t9',
+   787→        description: 'Registration for PICT Tech Summit 2026: AI & Future of Work',
+   788→        referenceId: event7.id,
+   789→      },
+   790→      {
+   791→        userId: alumni1.id,
+   792→        amount: 2000,
+   793→        currency: 'INR',
+   794→        type: 'DONATION',
+   795→        status: 'COMPLETED',
+   796→        razorpayId: 'pay_RzT5m6n7o8p9q0',
+   797→        razorpayOrderId: 'order_RzS1u2v3w4x5y6',
+   798→        description: 'Alumni donation towards scholarship fund for underprivileged students',
+   799→      },
+   800→      {
+   801→        userId: alumni3.id,
+   802→        amount: 1500,
+   803→        currency: 'INR',
+   804→        type: 'DONATION',
+   805→        status: 'COMPLETED',
+   806→        razorpayId: 'pay_RzU1a2b3c4d5e6',
+   807→        razorpayOrderId: 'order_RzT7z8a9b0c1d2',
+   808→        description: 'Contribution towards alumni portal development and maintenance',
+   809→      },
+   810→      {
+   811→        userId: student3.id,
+   812→        amount: 999,
+   813→        currency: 'INR',
+   814→        type: 'EVENT',
+   815→        status: 'PENDING',
+   816→        description: 'Registration for PICT Tech Summit 2026: AI & Future of Work',
+   817→        referenceId: event7.id,
+   818→      },
+   819→      {
+   820→        userId: alumni2.id,
+   821→        amount: 2000,
+   822→        currency: 'INR',
+   823→        type: 'DONATION',
+   824→        status: 'PENDING',
+   825→        description: 'Pledged donation for 2026 annual alumni meet',
+   826→      },
+   827→    ],
+   828→  })
+   829→  console.log(`   ✅ Created ${await db.payment.count()} payments\n`)
+   830→
+   831→  // ─── 12. Create Certificates (6 total with SHA-256 hashes) ───
+   832→  console.log('📜 Creating certificates...')
+   833→  const now = Date.now()
+   834→  const twoYearsFromNow = new Date(now + 2 * 365 * 24 * 60 * 60 * 1000)
+   835→
+   836→  const certificatesData = [
+   837→    {
+   838→      userId: student1.id,
+   839→      title: 'Web Development Bootcamp Completion',
+   840→      type: 'COMPLETION',
+   841→      description: 'Successfully completed the 4-week intensive Web Development Bootcamp covering HTML, CSS, JavaScript, React, and Node.js with a capstone project.',
+   842→      issuedBy: 'JJMCOE Training & Placement Cell',
+   843→      expiresAt: null,
+   844→    },
+   845→    {
+   846→      userId: student2.id,
+   847→      title: 'AI & Machine Learning Workshop',
+   848→      type: 'WORKSHOP',
+   849→      description: 'Participated in the hands-on AI/ML workshop covering neural networks, TensorFlow, and real-world machine learning applications.',
+   850→      issuedBy: 'JJMCOE Department of IT',
+   851→      expiresAt: null,
+   852→    },
+   853→    {
+   854→      userId: student1.id,
+   855→      title: 'Mentorship Excellence Award',
+   856→      type: 'ACHIEVEMENT',
+   857→      description: 'Awarded for outstanding performance and active engagement in the alumni mentorship program. Completed 5 mentorship sessions with consistent ratings of 5/5.',
+   858→      issuedBy: 'JJMCOE Alumni Association',
+   859→      expiresAt: null,
+   860→    },
+   861→    {
+   862→      userId: student3.id,
+   863→      title: 'Cloud & DevOps Certification',
+   864→      type: 'WORKSHOP',
+   865→      description: 'Earned certification in cloud computing and DevOps practices including AWS, Docker, Kubernetes, and CI/CD pipeline configuration.',
+   866→      issuedBy: 'JJMCOE in collaboration with AWS Educate',
+   867→      expiresAt: twoYearsFromNow,
+   868→    },
+   869→    {
+   870→      userId: pictStudent1.id,
+   871→      title: 'Hackathon Champion - CodeStorm 2026',
+   872→      type: 'ACHIEVEMENT',
+   873→      description: 'First place winner of CodeStorm 2026 national hackathon. Built an AI-powered accessibility tool for visually impaired users. Selected from 500+ teams.',
+   874→      issuedBy: 'PICT Technical Council',
+   875→      expiresAt: null,
+   876→    },
+   877→    {
+   878→      userId: pictStudent1.id,
+   879→      title: 'Alumni Mentorship Program Completion',
+   880→      type: 'MENTORSHIP',
+   881→      description: 'Successfully completed the structured mentorship program under Neha Joshi (Engineering Manager, Google). Focused on system design, interview prep, and career strategy.',
+   882→      issuedBy: 'PICT Alumni Network',
+   883→      expiresAt: twoYearsFromNow,
+   884→    },
+   885→  ]
+   886→
+   887→  for (const cert of certificatesData) {
+   888→    const hashData = `${cert.userId}-${cert.title}-${cert.type}-${now}`
+   889→    const certificateHash = crypto.createHash('sha256').update(hashData).digest('hex')
+   890→    const txHash = '0x' + crypto.randomBytes(32).toString('hex')
+   891→
+   892→    await db.certificate.create({
+   893→      data: {
+   894→        userId: cert.userId,
+   895→        title: cert.title,
+   896→        type: cert.type,
+   897→        description: cert.description,
+   898→        certificateHash,
+   899→        txHash,
+   900→        issuedBy: cert.issuedBy,
+   901→        issuedAt: new Date(),
+   902→        expiresAt: cert.expiresAt,
+   903→        isVerified: true,
+   904→      },
+   905→    })
+   906→  }
+   907→  console.log(`   ✅ Created ${await db.certificate.count()} certificates (with SHA-256 hashes)\n`)
+   908→
+   909→  // ─── Summary ───
+   910→  console.log('═══════════════════════════════════════════')
+   911→  console.log('          📊 SEED SUMMARY                     ')
+   912→  console.log('═══════════════════════════════════════════')
+   913→  console.log(`  Organizations:        ${await db.organization.count()}`)
+   914→  console.log(`  Users:                ${await db.user.count()} (${await db.user.count({ where: { organizationId: orgJJMCOE.id } })} JJMCOE, ${await db.user.count({ where: { organizationId: orgPICT.id } })} PICT)`)
+   915→  console.log(`  Jobs:                 ${await db.job.count()}`)
+   916→  console.log(`  Applications:         ${await db.application.count()}`)
+   917→  console.log(`  Mentorships:          ${await db.mentorship.count()}`)
+   918→  console.log(`  Events:               ${await db.event.count()} (2 paid: ₹499, ₹999)`)
+   919→  console.log(`  Event Registrations:  ${await db.eventRegistration.count()}`)
+   920→  console.log(`  Notifications:        ${await db.notification.count()}`)
+   921→  console.log(`  Payments:             ${await db.payment.count()} (${await db.payment.count({ where: { status: 'COMPLETED' } })} completed, ${await db.payment.count({ where: { status: 'PENDING' } })} pending)`)
+   922→  console.log(`  Certificates:         ${await db.certificate.count()} (all verified, with blockchain txHash)`)
+   923→  console.log('═══════════════════════════════════════════')
+   924→  console.log('✅ Seed completed successfully!\n')
+   925→
+   926→  await db.$disconnect()
+   927→}
+   928→
+   929→seed().catch((e) => {
+   930→  console.error('❌ Seed failed:', e)
+   931→  process.exit(1)
+   932→})
+   933→

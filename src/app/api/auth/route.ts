@@ -1,28 +1,53 @@
 import { db } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
 
+const VALID_EMAIL_DOMAIN = '.jjmcoe.ac.in'
+
+// Helper to check if email is valid college email
+function isValidCollegeEmail(email: string): boolean {
+  return email.toLowerCase().endsWith(VALID_EMAIL_DOMAIN)
+}
+
+// Helper to check if email is from an allowed external domain (for recruiters/admins)
+const ALLOWED_EXTERNAL_DOMAINS = ['@tcs.com', '@infosys.com', '@wipro.com', '@persistent.com', '@razorpay.com', '@gmail.com']
+
+function isAllowedExternalEmail(email: string): boolean {
+  const lower = email.toLowerCase()
+  return ALLOWED_EXTERNAL_DOMAINS.some(d => lower.endsWith(d))
+}
+
+// POST - Login / Signup
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
     const { action, email, password, name, role, department, batch, graduationYear, company, designation, phone, skills } = body
 
     if (action === 'login') {
-      // Demo login - accept any password for existing users, or create quick-access
+      if (!email || !password) {
+        return NextResponse.json({ error: 'Email and password are required' }, { status: 400 })
+      }
+
       let user = await db.user.findUnique({ where: { email } })
 
       if (!user) {
-        // Auto-create demo user for quick testing
-        user = await db.user.create({
-          data: {
-            email,
-            password: 'demo',
-            name: email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
-            role: role || 'STUDENT',
-            department: department || 'Information Technology',
-            isVerified: true,
-          },
-        })
+        return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 })
       }
+
+      // Check password
+      if (user.password && user.password !== password && user.password !== 'demo') {
+        return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 })
+      }
+
+      // Check if email is verified (only for college emails)
+      if (isValidCollegeEmail(email) && !user.emailVerified) {
+        return NextResponse.json(
+          { error: 'Please verify your email first. An OTP was sent to your email.', needsVerification: true, email },
+          { status: 403 }
+        )
+      }
+
+      // Update online status
+      await db.user.update({ where: { id: user.id }, data: { isOnline: true } })
 
       return NextResponse.json({
         id: user.id,
@@ -44,17 +69,41 @@ export async function POST(req: NextRequest) {
         linkedinUrl: user.linkedinUrl,
         gpa: user.gpa,
         isVerified: user.isVerified,
+        emailVerified: user.emailVerified,
         isOnline: true,
         createdAt: user.createdAt.toISOString(),
       })
     }
 
     if (action === 'signup') {
+      if (!email || !name) {
+        return NextResponse.json({ error: 'Email and name are required' }, { status: 400 })
+      }
+
+      // Email validation based on role
+      const studentOrAlumniRoles = ['STUDENT', 'ALUMNI']
+      if (studentOrAlumniRoles.includes(role)) {
+        // Students and Alumni MUST use .jjmcoe.ac.in email
+        if (!isValidCollegeEmail(email)) {
+          return NextResponse.json(
+            {
+              error: `Students and Alumni must register with their official college email ending with ${VALID_EMAIL_DOMAIN}. Example: yourname@jjmcoe.ac.in`,
+            },
+            { status: 400 }
+          )
+        }
+      }
+
       const existing = await db.user.findUnique({ where: { email } })
       if (existing) {
         return NextResponse.json({ error: 'Email already registered' }, { status: 409 })
       }
 
+      // Generate OTP for email verification
+      const otp = Math.floor(100000 + Math.random() * 900000).toString()
+      const otpExpiry = new Date(Date.now() + 10 * 60 * 1000) // 10 minutes
+
+      // Create user with emailVerified = false (needs OTP verification)
       const user = await db.user.create({
         data: {
           email,
@@ -69,8 +118,13 @@ export async function POST(req: NextRequest) {
           phone: phone || '',
           skills: skills || '',
           isVerified: true,
+          emailVerified: isValidCollegeEmail(email) ? false : true, // College emails need verification
+          verificationOtp: isValidCollegeEmail(email) ? otp : null,
+          otpExpiry: isValidCollegeEmail(email) ? otpExpiry : null,
         },
       })
+
+      console.log(`📧 Verification OTP for ${email}: ${otp} (expires in 10 minutes)`)
 
       return NextResponse.json({
         id: user.id,
@@ -79,8 +133,14 @@ export async function POST(req: NextRequest) {
         role: user.role,
         department: user.department,
         isVerified: user.isVerified,
+        emailVerified: user.emailVerified,
         isOnline: true,
         createdAt: user.createdAt.toISOString(),
+        needsVerification: !user.emailVerified,
+        demoOTP: user.emailVerified ? undefined : otp,
+        message: user.emailVerified
+          ? 'Account created successfully!'
+          : `OTP sent to ${email}. Verify your email to complete registration. Check the server console for demo OTP.`,
       })
     }
 
@@ -91,6 +151,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
+// GET - Fetch users, alumni, or single user
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url)
@@ -133,6 +194,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
+// PUT - Update user profile
 export async function PUT(req: NextRequest) {
   try {
     const body = await req.json()

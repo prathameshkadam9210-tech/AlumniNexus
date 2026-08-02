@@ -46,6 +46,11 @@ model User {
   linkedinUrl     String?
   gpa             Float?
   isVerified      Boolean  @default(false)
+  emailVerified   Boolean  @default(false)
+  verificationOtp String?
+  otpExpiry       DateTime?
+  resetToken      String?
+  resetTokenExpiry DateTime?
   isOnline        Boolean  @default(false)
   organizationId  String?
   organization    Organization?  @relation(fields: [organizationId], references: [id])
