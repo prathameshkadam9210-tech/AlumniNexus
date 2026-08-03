@@ -33,6 +33,8 @@ import {
   Star,
   Target,
   AlertTriangle,
+  Camera,
+  Loader2,
 } from 'lucide-react'
 
 // ============================================================
@@ -42,6 +44,8 @@ import {
 function ProfileForm({ userId }: { userId: string }) {
   const { currentUser, updateUser, addToast, setLoading, setCurrentView } = useAppStore()
   const [saving, setSaving] = useState(false)
+  const [uploadingAvatar, setUploadingAvatar] = useState(false)
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(currentUser?.avatar || null)
   const [form, setForm] = useState({
     name: '',
     email: '',
@@ -154,6 +158,49 @@ function ProfileForm({ userId }: { userId: string }) {
     }
   }
 
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.size > 2 * 1024 * 1024) {
+      addToast('Image must be under 2MB', 'error')
+      return
+    }
+    if (!['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(file.type)) {
+      addToast('Only JPG, PNG, GIF, WebP allowed', 'error')
+      return
+    }
+
+    setUploadingAvatar(true)
+    try {
+      // Show preview immediately
+      const reader = new FileReader()
+      reader.onload = (ev) => setAvatarPreview(ev.target?.result as string)
+      reader.readAsDataURL(file)
+
+      // Upload to server
+      const formData = new FormData()
+      formData.append('avatar', file)
+      formData.append('userId', userId)
+      const res = await fetch('/api/upload/avatar', { method: 'POST', body: formData })
+      if (!res.ok) throw new Error('Upload failed')
+      const data = await res.json()
+
+      // Save avatar URL to DB
+      await fetch('/api/auth', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, avatar: data.avatarUrl }),
+      })
+      updateUser(userId, { avatar: data.avatarUrl })
+      addToast('Profile photo updated!', 'success')
+    } catch {
+      addToast('Failed to upload image', 'error')
+      setAvatarPreview(currentUser?.avatar || null)
+    } finally {
+      setUploadingAvatar(false)
+    }
+  }
+
   const role = currentUser?.role || 'STUDENT'
   const isStudent = role === 'STUDENT'
   const isAlumni = role === 'ALUMNI'
@@ -161,35 +208,60 @@ function ProfileForm({ userId }: { userId: string }) {
 
   return (
     <div className="space-y-6">
-      {/* Avatar Section */}
+      {/* Avatar Section with Upload */}
       <div className="flex flex-col items-center gap-4">
-        <div className="relative">
-          <Avatar className="h-24 w-24 text-2xl">
-            <AvatarFallback className="bg-primary text-primary-foreground text-3xl font-bold">
-              {currentUser?.name
-                ?.split(' ')
-                .map(n => n[0])
-                .join('')
-                .toUpperCase()
-                .slice(0, 2) || 'U'}
-            </AvatarFallback>
+        <div className="relative group cursor-pointer" onClick={() => document.getElementById('avatar-upload')?.click()}>
+          <Avatar className="h-28 w-28 text-2xl ring-4 ring-emerald-100 dark:ring-emerald-900/50 transition-all group-hover:ring-emerald-300">
+            {avatarPreview ? (
+              <img src={avatarPreview} alt={currentUser?.name} className="h-full w-full object-cover rounded-full" />
+            ) : (
+              <AvatarFallback className="bg-gradient-to-br from-emerald-500 to-teal-600 text-white text-3xl font-bold">
+                {currentUser?.name
+                  ?.split(' ')
+                  .map(n => n[0])
+                  .join('')
+                  .toUpperCase()
+                  .slice(0, 2) || 'U'}
+              </AvatarFallback>
+            )}
           </Avatar>
+          {/* Upload overlay */}
+          <div className="absolute inset-0 rounded-full bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+            {uploadingAvatar ? (
+              <Loader2 className="h-8 w-8 text-white animate-spin" />
+            ) : (
+              <div className="flex flex-col items-center gap-1 text-white">
+                <Camera className="h-6 w-6" />
+                <span className="text-[10px] font-medium">Change</span>
+              </div>
+            )}
+          </div>
           {currentUser?.isVerified && (
-            <div className="absolute -bottom-1 -right-1 bg-primary text-primary-foreground rounded-full p-1">
+            <div className="absolute -bottom-1 -right-1 bg-emerald-500 text-white rounded-full p-1 z-10">
               <CheckCircle2 className="h-5 w-5" />
             </div>
           )}
+          <input
+            id="avatar-upload"
+            type="file"
+            accept="image/jpeg,image/png,image/gif,image/webp"
+            className="hidden"
+            onChange={handleAvatarUpload}
+          />
         </div>
-        <div className="flex items-center gap-2">
-          <Badge variant="secondary" className="capitalize">
-            {role.replace('_', ' ')}
-          </Badge>
-          {currentUser?.isVerified && (
-            <Badge variant="outline" className="gap-1 text-emerald-600 border-emerald-300">
-              <Shield className="h-3 w-3" />
-              Verified
+        <div className="flex flex-col items-center gap-2">
+          <div className="flex items-center gap-2">
+            <Badge variant="secondary" className="capitalize">
+              {role.replace('_', ' ')}
             </Badge>
-          )}
+            {currentUser?.isVerified && (
+              <Badge variant="outline" className="gap-1 text-emerald-600 border-emerald-300">
+                <Shield className="h-3 w-3" />
+                Verified
+              </Badge>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground">Click avatar to upload (max 2MB, JPG/PNG/WebP)</p>
         </div>
       </div>
 

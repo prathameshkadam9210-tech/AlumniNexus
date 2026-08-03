@@ -221,6 +221,7 @@ export async function PUT(req: NextRequest) {
         linkedinUrl: data.linkedinUrl,
         gpa: data.gpa,
         isVerified: data.isVerified,
+        avatar: data.avatar,
       },
     })
 

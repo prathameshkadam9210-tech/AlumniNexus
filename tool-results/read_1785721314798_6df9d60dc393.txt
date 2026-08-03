@@ -1,0 +1,1122 @@
+     1→'use client'
+     2→
+     3→import React, { useState, useEffect, useCallback } from 'react'
+     4→import { useAppStore, type ViewName } from '@/store/app-store'
+     5→import { Button } from '@/components/ui/button'
+     6→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+     7→import { Input } from '@/components/ui/input'
+     8→import { Textarea } from '@/components/ui/textarea'
+     9→import { Label } from '@/components/ui/label'
+    10→import { Badge } from '@/components/ui/badge'
+    11→import { Separator } from '@/components/ui/separator'
+    12→import { Skeleton } from '@/components/ui/skeleton'
+    13→import { Progress } from '@/components/ui/progress'
+    14→import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+    15→import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
+    16→import {
+    17→  User as UserIcon,
+    18→  Mail,
+    19→  Phone,
+    20→  MapPin,
+    21→  Linkedin,
+    22→  GraduationCap,
+    23→  Building2,
+    24→  Briefcase,
+    25→  FileText,
+    26→  CheckCircle2,
+    27→  Plus,
+    28→  X,
+    29→  Sparkles,
+    30→  Download,
+    31→  Save,
+    32→  Shield,
+    33→  Star,
+    34→  Target,
+    35→  AlertTriangle,
+    36→} from 'lucide-react'
+    37→
+    38→// ============================================================
+    39→// Profile Form Component
+    40→// ============================================================
+    41→
+    42→function ProfileForm({ userId }: { userId: string }) {
+    43→  const { currentUser, updateUser, addToast, setLoading, setCurrentView } = useAppStore()
+    44→  const [saving, setSaving] = useState(false)
+    45→  const [form, setForm] = useState({
+    46→    name: '',
+    47→    email: '',
+    48→    phone: '',
+    49→    bio: '',
+    50→    department: '',
+    51→    location: '',
+    52→    skills: '',
+    53→    linkedinUrl: '',
+    54→    batch: '',
+    55→    graduationYear: '',
+    56→    gpa: '',
+    57→    resumeUrl: '',
+    58→    company: '',
+    59→    designation: '',
+    60→    experience: '',
+    61→  })
+    62→
+    63→  useEffect(() => {
+    64→    if (currentUser) {
+    65→      setForm({
+    66→        name: currentUser.name || '',
+    67→        email: currentUser.email || '',
+    68→        phone: currentUser.phone || '',
+    69→        bio: currentUser.bio || '',
+    70→        department: currentUser.department || '',
+    71→        location: currentUser.location || '',
+    72→        skills: formatSkillsForDisplay(currentUser.skills),
+    73→        linkedinUrl: currentUser.linkedinUrl || '',
+    74→        batch: currentUser.batch || '',
+    75→        graduationYear: currentUser.graduationYear?.toString() || '',
+    76→        gpa: currentUser.gpa?.toString() || '',
+    77→        resumeUrl: currentUser.resumeUrl || '',
+    78→        company: currentUser.company || '',
+    79→        designation: currentUser.designation || '',
+    80→        experience: currentUser.experience || '',
+    81→      })
+    82→    }
+    83→  }, [currentUser])
+    84→
+    85→  const formatSkillsForDisplay = (skills: string | null | undefined): string => {
+    86→    if (!skills) return ''
+    87→    try {
+    88→      const parsed = JSON.parse(skills)
+    89→      if (Array.isArray(parsed)) return parsed.join(', ')
+    90→    } catch {
+    91→      // If not JSON, return as-is (comma-separated)
+    92→    }
+    93→    return skills
+    94→  }
+    95→
+    96→  const handleChange = (field: string, value: string) => {
+    97→    setForm(prev => ({ ...prev, [field]: value }))
+    98→  }
+    99→
+   100→  const handleSave = async () => {
+   101→    setSaving(true)
+   102→    setLoading(true)
+   103→    try {
+   104→      const skillsStr = form.skills
+   105→        ? JSON.stringify(form.skills.split(',').map(s => s.trim()).filter(Boolean))
+   106→        : null
+   107→
+   108→      const body: Record<string, unknown> = {
+   109→        userId,
+   110→        name: form.name,
+   111→        email: form.email,
+   112→        phone: form.phone || null,
+   113→        bio: form.bio || null,
+   114→        department: form.department || null,
+   115→        location: form.location || null,
+   116→        skills: skillsStr,
+   117→        linkedinUrl: form.linkedinUrl || null,
+   118→      }
+   119→
+   120→      if (currentUser?.role === 'STUDENT' || currentUser?.role === 'ALUMNI') {
+   121→        body.batch = form.batch || null
+   122→        body.graduationYear = form.graduationYear ? parseInt(form.graduationYear) : null
+   123→      }
+   124→      if (currentUser?.role === 'STUDENT') {
+   125→        body.gpa = form.gpa ? parseFloat(form.gpa) : null
+   126→        body.resumeUrl = form.resumeUrl || null
+   127→      }
+   128→      if (currentUser?.role === 'ALUMNI' || currentUser?.role === 'RECRUITER') {
+   129→        body.company = form.company || null
+   130→        body.designation = form.designation || null
+   131→      }
+   132→      if (currentUser?.role === 'ALUMNI') {
+   133→        body.experience = form.experience || null
+   134→      }
+   135→
+   136→      const res = await fetch('/api/auth', {
+   137→        method: 'PUT',
+   138→        headers: { 'Content-Type': 'application/json' },
+   139→        body: JSON.stringify(body),
+   140→      })
+   141→
+   142→      if (!res.ok) {
+   143→        const err = await res.json()
+   144→        throw new Error(err.error || 'Failed to update profile')
+   145→      }
+   146→
+   147→      updateUser(userId, body)
+   148→      addToast('Profile updated successfully', 'success')
+   149→    } catch (err) {
+   150→      addToast(err instanceof Error ? err.message : 'Failed to update profile', 'error')
+   151→    } finally {
+   152→      setSaving(false)
+   153→      setLoading(false)
+   154→    }
+   155→  }
+   156→
+   157→  const role = currentUser?.role || 'STUDENT'
+   158→  const isStudent = role === 'STUDENT'
+   159→  const isAlumni = role === 'ALUMNI'
+   160→  const isRecruiter = role === 'RECRUITER'
+   161→
+   162→  return (
+   163→    <div className="space-y-6">
+   164→      {/* Avatar Section */}
+   165→      <div className="flex flex-col items-center gap-4">
+   166→        <div className="relative">
+   167→          <Avatar className="h-24 w-24 text-2xl">
+   168→            <AvatarFallback className="bg-primary text-primary-foreground text-3xl font-bold">
+   169→              {currentUser?.name
+   170→                ?.split(' ')
+   171→                .map(n => n[0])
+   172→                .join('')
+   173→                .toUpperCase()
+   174→                .slice(0, 2) || 'U'}
+   175→            </AvatarFallback>
+   176→          </Avatar>
+   177→          {currentUser?.isVerified && (
+   178→            <div className="absolute -bottom-1 -right-1 bg-primary text-primary-foreground rounded-full p-1">
+   179→              <CheckCircle2 className="h-5 w-5" />
+   180→            </div>
+   181→          )}
+   182→        </div>
+   183→        <div className="flex items-center gap-2">
+   184→          <Badge variant="secondary" className="capitalize">
+   185→            {role.replace('_', ' ')}
+   186→          </Badge>
+   187→          {currentUser?.isVerified && (
+   188→            <Badge variant="outline" className="gap-1 text-emerald-600 border-emerald-300">
+   189→              <Shield className="h-3 w-3" />
+   190→              Verified
+   191→            </Badge>
+   192→          )}
+   193→        </div>
+   194→      </div>
+   195→
+   196→      <Separator />
+   197→
+   198→      {/* Profile Form */}
+   199→      <div className="grid gap-6 md:grid-cols-2">
+   200→        {/* Common Fields - Left Column */}
+   201→        <div className="space-y-4">
+   202→          <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Personal Information</h3>
+   203→
+   204→          <div className="space-y-2">
+   205→            <Label htmlFor="name">Full Name</Label>
+   206→            <div className="relative">
+   207→              <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+   208→              <Input
+   209→                id="name"
+   210→                value={form.name}
+   211→                onChange={e => handleChange('name', e.target.value)}
+   212→                className="pl-9"
+   213→                placeholder="Your full name"
+   214→              />
+   215→            </div>
+   216→          </div>
+   217→
+   218→          <div className="space-y-2">
+   219→            <Label htmlFor="email">Email</Label>
+   220→            <div className="relative">
+   221→              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+   222→              <Input
+   223→                id="email"
+   224→                type="email"
+   225→                value={form.email}
+   226→                onChange={e => handleChange('email', e.target.value)}
+   227→                className="pl-9"
+   228→                placeholder="your.email@example.com"
+   229→              />
+   230→            </div>
+   231→          </div>
+   232→
+   233→          <div className="space-y-2">
+   234→            <Label htmlFor="phone">Phone</Label>
+   235→            <div className="relative">
+   236→              <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+   237→              <Input
+   238→                id="phone"
+   239→                value={form.phone}
+   240→                onChange={e => handleChange('phone', e.target.value)}
+   241→                className="pl-9"
+   242→                placeholder="+1 234 567 8900"
+   243→              />
+   244→            </div>
+   245→          </div>
+   246→
+   247→          <div className="space-y-2">
+   248→            <Label htmlFor="bio">Bio</Label>
+   249→            <Textarea
+   250→              id="bio"
+   251→              value={form.bio}
+   252→              onChange={e => handleChange('bio', e.target.value)}
+   253→              placeholder="Tell us about yourself..."
+   254→              rows={3}
+   255→            />
+   256→          </div>
+   257→
+   258→          <div className="space-y-2">
+   259→            <Label htmlFor="department">Department</Label>
+   260→            <div className="relative">
+   261→              <GraduationCap className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+   262→              <Input
+   263→                id="department"
+   264→                value={form.department}
+   265→                onChange={e => handleChange('department', e.target.value)}
+   266→                className="pl-9"
+   267→                placeholder="e.g. Computer Science"
+   268→              />
+   269→            </div>
+   270→          </div>
+   271→
+   272→          <div className="space-y-2">
+   273→            <Label htmlFor="location">Location</Label>
+   274→            <div className="relative">
+   275→              <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+   276→              <Input
+   277→                id="location"
+   278→                value={form.location}
+   279→                onChange={e => handleChange('location', e.target.value)}
+   280→                className="pl-9"
+   281→                placeholder="City, Country"
+   282→              />
+   283→            </div>
+   284→          </div>
+   285→
+   286→          <div className="space-y-2">
+   287→            <Label htmlFor="skills">Skills <span className="text-muted-foreground font-normal">(comma-separated)</span></Label>
+   288→            <Textarea
+   289→              id="skills"
+   290→              value={form.skills}
+   291→              onChange={e => handleChange('skills', e.target.value)}
+   292→              placeholder="React, TypeScript, Node.js, Python"
+   293→              rows={2}
+   294→            />
+   295→          </div>
+   296→
+   297→          <div className="space-y-2">
+   298→            <Label htmlFor="linkedin">LinkedIn URL</Label>
+   299→            <div className="relative">
+   300→              <Linkedin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+   301→              <Input
+   302→                id="linkedin"
+   303→                value={form.linkedinUrl}
+   304→                onChange={e => handleChange('linkedinUrl', e.target.value)}
+   305→                className="pl-9"
+   306→                placeholder="https://linkedin.com/in/yourname"
+   307→              />
+   308→            </div>
+   309→          </div>
+   310→        </div>
+   311→
+   312→        {/* Role-Specific Fields - Right Column */}
+   313→        <div className="space-y-4">
+   314→          <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+   315→            {isStudent ? 'Student Details' : isAlumni ? 'Alumni Details' : 'Professional Details'}
+   316→          </h3>
+   317→
+   318→          {(isStudent || isAlumni) && (
+   319→            <>
+   320→              <div className="space-y-2">
+   321→                <Label htmlFor="batch">Batch</Label>
+   322→                <Input
+   323→                  id="batch"
+   324→                  value={form.batch}
+   325→                  onChange={e => handleChange('batch', e.target.value)}
+   326→                  placeholder="e.g. 2020-2024"
+   327→                />
+   328→              </div>
+   329→
+   330→              <div className="space-y-2">
+   331→                <Label htmlFor="graduationYear">Graduation Year</Label>
+   332→                <Input
+   333→                  id="graduationYear"
+   334→                  type="number"
+   335→                  value={form.graduationYear}
+   336→                  onChange={e => handleChange('graduationYear', e.target.value)}
+   337→                  placeholder="2024"
+   338→                />
+   339→              </div>
+   340→            </>
+   341→          )}
+   342→
+   343→          {isStudent && (
+   344→            <>
+   345→              <div className="space-y-2">
+   346→                <Label htmlFor="gpa">GPA</Label>
+   347→                <Input
+   348→                  id="gpa"
+   349→                  type="number"
+   350→                  step="0.01"
+   351→                  value={form.gpa}
+   352→                  onChange={e => handleChange('gpa', e.target.value)}
+   353→                  placeholder="3.8"
+   354→                />
+   355→              </div>
+   356→
+   357→              <div className="space-y-2">
+   358→                <Label htmlFor="resumeUrl">Resume URL</Label>
+   359→                <div className="relative">
+   360→                  <FileText className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+   361→                  <Input
+   362→                    id="resumeUrl"
+   363→                    value={form.resumeUrl}
+   364→                    onChange={e => handleChange('resumeUrl', e.target.value)}
+   365→                    className="pl-9"
+   366→                    placeholder="https://drive.google.com/..."
+   367→                  />
+   368→                </div>
+   369→              </div>
+   370→
+   371→              <Button
+   372→                variant="outline"
+   373→                className="w-full mt-2"
+   374→                onClick={() => setCurrentView('resume-builder')}
+   375→              >
+   376→                <Sparkles className="h-4 w-4 mr-2" />
+   377→                Open Resume Builder
+   378→              </Button>
+   379→            </>
+   380→          )}
+   381→
+   382→          {(isAlumni || isRecruiter) && (
+   383→            <>
+   384→              <div className="space-y-2">
+   385→                <Label htmlFor="company">Company</Label>
+   386→                <div className="relative">
+   387→                  <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+   388→                  <Input
+   389→                    id="company"
+   390→                    value={form.company}
+   391→                    onChange={e => handleChange('company', e.target.value)}
+   392→                    className="pl-9"
+   393→                    placeholder="Company name"
+   394→                  />
+   395→                </div>
+   396→              </div>
+   397→
+   398→              <div className="space-y-2">
+   399→                <Label htmlFor="designation">Designation</Label>
+   400→                <div className="relative">
+   401→                  <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+   402→                  <Input
+   403→                    id="designation"
+   404→                    value={form.designation}
+   405→                    onChange={e => handleChange('designation', e.target.value)}
+   406→                    className="pl-9"
+   407→                    placeholder="Job title"
+   408→                  />
+   409→                </div>
+   410→              </div>
+   411→            </>
+   412→          )}
+   413→
+   414→          {isAlumni && (
+   415→            <div className="space-y-2">
+   416→              <Label htmlFor="experience">Experience</Label>
+   417→              <Input
+   418→                id="experience"
+   419→                value={form.experience}
+   420→                onChange={e => handleChange('experience', e.target.value)}
+   421→                placeholder="e.g. 5 years"
+   422→              />
+   423→            </div>
+   424→          )}
+   425→        </div>
+   426→      </div>
+   427→
+   428→      <Separator />
+   429→
+   430→      {/* Save Button */}
+   431→      <div className="flex justify-end">
+   432→        <Button onClick={handleSave} disabled={saving} className="min-w-[140px]">
+   433→          {saving ? (
+   434→            <div className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+   435→          ) : (
+   436→            <Save className="h-4 w-4 mr-2" />
+   437→          )}
+   438→          {saving ? 'Saving...' : 'Save Changes'}
+   439→        </Button>
+   440→      </div>
+   441→    </div>
+   442→  )
+   443→}
+   444→
+   445→// ============================================================
+   446→// Resume Builder Component (Students Only)
+   447→// ============================================================
+   448→
+   449→interface ResumeSection {
+   450→  degree: string
+   451→  college: string
+   452→  year: string
+   453→  gpa: string
+   454→}
+   455→
+   456→interface ResumeExperience {
+   457→  company: string
+   458→  role: string
+   459→  duration: string
+   460→  description: string
+   461→}
+   462→
+   463→interface ResumeProject {
+   464→  title: string
+   465→  tech: string
+   466→  description: string
+   467→  link: string
+   468→}
+   469→
+   470→function ResumeBuilder({ userId }: { userId: string }) {
+   471→  const { currentUser, updateUser, addToast, setLoading, setCurrentView } = useAppStore()
+   472→  const [saving, setSaving] = useState(false)
+   473→  const [reviewing, setReviewing] = useState(false)
+   474→  const [skillInput, setSkillInput] = useState('')
+   475→  const [skills, setSkills] = useState<string[]>([])
+   476→  const [objective, setObjective] = useState('')
+   477→  const [education, setEducation] = useState<ResumeSection>({
+   478→    degree: '',
+   479→    college: '',
+   480→    year: '',
+   481→    gpa: '',
+   482→  })
+   483→  const [experiences, setExperiences] = useState<ResumeExperience[]>([])
+   484→  const [projects, setProjects] = useState<ResumeProject[]>([])
+   485→  const [aiReview, setAiReview] = useState<{
+   486→    score: number
+   487→    sections: { name: string; score: number; feedback: string }[]
+   488→    suggestions: string[]
+   489→  } | null>(null)
+   490→
+   491→  // Auto-fill from profile
+   492→  useEffect(() => {
+   493→    if (currentUser) {
+   494→      setEducation({
+   495→        degree: currentUser.department || '',
+   496→        college: '',
+   497→        year: currentUser.graduationYear?.toString() || '',
+   498→        gpa: currentUser.gpa?.toString() || '',
+   499→      })
+   500→      if (currentUser.skills) {
+   501→        try {
+   502→          const parsed = JSON.parse(currentUser.skills)
+   503→          if (Array.isArray(parsed)) setSkills(parsed)
+   504→        } catch {
+   505→          setSkills(currentUser.skills.split(',').map(s => s.trim()).filter(Boolean))
+   506→        }
+   507→      }
+   508→    }
+   509→  }, [currentUser])
+   510→
+   511→  const addSkill = () => {
+   512→    const trimmed = skillInput.trim()
+   513→    if (trimmed && !skills.includes(trimmed)) {
+   514→      setSkills(prev => [...prev, trimmed])
+   515→      setSkillInput('')
+   516→    }
+   517→  }
+   518→
+   519→  const removeSkill = (skill: string) => {
+   520→    setSkills(prev => prev.filter(s => s !== skill))
+   521→  }
+   522→
+   523→  const addExperience = () => {
+   524→    setExperiences(prev => [...prev, { company: '', role: '', duration: '', description: '' }])
+   525→  }
+   526→
+   527→  const updateExperience = (idx: number, field: keyof ResumeExperience, value: string) => {
+   528→    setExperiences(prev => prev.map((exp, i) => (i === idx ? { ...exp, [field]: value } : exp)))
+   529→  }
+   530→
+   531→  const removeExperience = (idx: number) => {
+   532→    setExperiences(prev => prev.filter((_, i) => i !== idx))
+   533→  }
+   534→
+   535→  const addProject = () => {
+   536→    setProjects(prev => [...prev, { title: '', tech: '', description: '', link: '' }])
+   537→  }
+   538→
+   539→  const updateProject = (idx: number, field: keyof ResumeProject, value: string) => {
+   540→    setProjects(prev => prev.map((proj, i) => (i === idx ? { ...proj, [field]: value } : proj)))
+   541→  }
+   542→
+   543→  const removeProject = (idx: number) => {
+   544→    setProjects(prev => prev.filter((_, i) => i !== idx))
+   545→  }
+   546→
+   547→  const handleAIReview = async () => {
+   548→    setReviewing(true)
+   549→    try {
+   550→      const res = await fetch('/api/ai', {
+   551→        method: 'POST',
+   552→        headers: { 'Content-Type': 'application/json' },
+   553→        body: JSON.stringify({
+   554→          action: 'resume-review',
+   555→          data: {
+   556→            skills,
+   557→            experience: experiences,
+   558→            education,
+   559→            projects,
+   560→            objective,
+   561→            targetRole: currentUser?.designation || 'Software Engineer',
+   562→          },
+   563→        }),
+   564→      })
+   565→      if (!res.ok) throw new Error('AI review failed')
+   566→      const result = await res.json()
+   567→      setAiReview(result)
+   568→      addToast('Resume review completed', 'success')
+   569→    } catch {
+   570→      addToast('Failed to get AI review', 'error')
+   571→    } finally {
+   572→      setReviewing(false)
+   573→    }
+   574→  }
+   575→
+   576→  const handleSave = async () => {
+   577→    setSaving(true)
+   578→    setLoading(true)
+   579→    try {
+   580→      const skillsStr = skills.length > 0 ? JSON.stringify(skills) : null
+   581→      const body: Record<string, unknown> = {
+   582→        userId,
+   583→        skills: skillsStr,
+   584→        department: education.degree || null,
+   585→        graduationYear: education.year ? parseInt(education.year) : null,
+   586→        gpa: education.gpa ? parseFloat(education.gpa) : null,
+   587→      }
+   588→
+   589→      const res = await fetch('/api/auth', {
+   590→        method: 'PUT',
+   591→        headers: { 'Content-Type': 'application/json' },
+   592→        body: JSON.stringify(body),
+   593→      })
+   594→
+   595→      if (!res.ok) throw new Error('Failed to save resume data')
+   596→      updateUser(userId, body)
+   597→      addToast('Resume data saved to profile', 'success')
+   598→    } catch {
+   599→      addToast('Failed to save resume data', 'error')
+   600→    } finally {
+   601→      setSaving(false)
+   602→      setLoading(false)
+   603→    }
+   604→  }
+   605→
+   606→  const handleDownloadPDF = () => {
+   607→    window.print()
+   608→  }
+   609→
+   610→  const getInitials = () => {
+   611→    return currentUser?.name
+   612→      ?.split(' ')
+   613→      .map(n => n[0])
+   614→      .join('')
+   615→      .toUpperCase()
+   616→      .slice(0, 2) || 'U'
+   617→  }
+   618→
+   619→  const getScoreColor = (score: number) => {
+   620→    if (score >= 80) return 'text-emerald-500'
+   621→    if (score >= 60) return 'text-amber-500'
+   622→    return 'text-red-500'
+   623→  }
+   624→
+   625→  return (
+   626→    <div className="space-y-4">
+   627→      {/* Header Actions */}
+   628→      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+   629→        <div>
+   630→          <h2 className="text-xl font-semibold">AI Resume Builder</h2>
+   631→          <p className="text-sm text-muted-foreground">Build and optimize your resume with AI assistance</p>
+   632→        </div>
+   633→        <div className="flex gap-2 flex-wrap">
+   634→          <Button variant="outline" size="sm" onClick={() => setCurrentView('profile')}>
+   635→            Back to Profile
+   636→          </Button>
+   637→          <Button variant="outline" size="sm" onClick={handleDownloadPDF}>
+   638→            <Download className="h-4 w-4 mr-1" />
+   639→            Download PDF
+   640→          </Button>
+   641→          <Button size="sm" onClick={handleSave} disabled={saving}>
+   642→            {saving ? 'Saving...' : <Save className="h-4 w-4 mr-1" />}
+   643→            Save to Profile
+   644→          </Button>
+   645→        </div>
+   646→      </div>
+   647→
+   648→      <div className="grid gap-6 lg:grid-cols-2">
+   649→        {/* Left: Form Sections */}
+   650→        <div className="space-y-4">
+   651→          <Accordion type="multiple" defaultValue={['personal', 'skills', 'education', 'experience', 'projects']} className="w-full">
+   652→            {/* Personal Info */}
+   653→            <AccordionItem value="personal">
+   654→              <AccordionTrigger>Personal Info <Badge variant="secondary" className="ml-2 text-xs">Auto-filled</Badge></AccordionTrigger>
+   655→              <AccordionContent>
+   656→                <div className="grid grid-cols-2 gap-3 pt-2">
+   657→                  <div className="space-y-1">
+   658→                    <Label className="text-xs">Name</Label>
+   659→                    <Input value={currentUser?.name || ''} disabled />
+   660→                  </div>
+   661→                  <div className="space-y-1">
+   662→                    <Label className="text-xs">Email</Label>
+   663→                    <Input value={currentUser?.email || ''} disabled />
+   664→                  </div>
+   665→                  <div className="space-y-1">
+   666→                    <Label className="text-xs">Phone</Label>
+   667→                    <Input value={currentUser?.phone || ''} disabled />
+   668→                  </div>
+   669→                  <div className="space-y-1">
+   670→                    <Label className="text-xs">Location</Label>
+   671→                    <Input value={currentUser?.location || ''} disabled />
+   672→                  </div>
+   673→                </div>
+   674→              </AccordionContent>
+   675→            </AccordionItem>
+   676→
+   677→            {/* Objective */}
+   678→            <AccordionItem value="objective">
+   679→              <AccordionTrigger>Objective / Summary</AccordionTrigger>
+   680→              <AccordionContent>
+   681→                <Textarea
+   682→                  value={objective}
+   683→                  onChange={e => setObjective(e.target.value)}
+   684→                  placeholder="A motivated Computer Science student seeking a software engineering internship..."
+   685→                  rows={3}
+   686→                  className="mt-1"
+   687→                />
+   688→              </AccordionContent>
+   689→            </AccordionItem>
+   690→
+   691→            {/* Skills */}
+   692→            <AccordionItem value="skills">
+   693→              <AccordionTrigger>Skills <Badge variant="secondary" className="ml-2 text-xs">{skills.length} added</Badge></AccordionTrigger>
+   694→              <AccordionContent>
+   695→                <div className="flex gap-2 mt-1">
+   696→                  <Input
+   697→                    value={skillInput}
+   698→                    onChange={e => setSkillInput(e.target.value)}
+   699→                    onKeyDown={e => {
+   700→                      if (e.key === 'Enter') {
+   701→                        e.preventDefault()
+   702→                        addSkill()
+   703→                      }
+   704→                    }}
+   705→                    placeholder="Type a skill and press Enter"
+   706→                    className="flex-1"
+   707→                  />
+   708→                  <Button size="sm" onClick={addSkill} type="button">
+   709→                    <Plus className="h-4 w-4" />
+   710→                  </Button>
+   711→                </div>
+   712→                <div className="flex flex-wrap gap-2 mt-3">
+   713→                  {skills.map(skill => (
+   714→                    <Badge key={skill} variant="secondary" className="gap-1 pr-1">
+   715→                      {skill}
+   716→                      <button
+   717→                        onClick={() => removeSkill(skill)}
+   718→                        className="ml-1 rounded-full hover:bg-muted-foreground/20 p-0.5"
+   719→                        aria-label={`Remove ${skill}`}
+   720→                      >
+   721→                        <X className="h-3 w-3" />
+   722→                      </button>
+   723→                    </Badge>
+   724→                  ))}
+   725→                  {skills.length === 0 && (
+   726→                    <p className="text-sm text-muted-foreground">No skills added yet. Start typing to add skills.</p>
+   727→                  )}
+   728→                </div>
+   729→              </AccordionContent>
+   730→            </AccordionItem>
+   731→
+   732→            {/* Education */}
+   733→            <AccordionItem value="education">
+   734→              <AccordionTrigger>Education</AccordionTrigger>
+   735→              <AccordionContent>
+   736→                <div className="grid gap-3 pt-1">
+   737→                  <div className="space-y-1">
+   738→                    <Label className="text-xs">Degree / Department</Label>
+   739→                    <Input
+   740→                      value={education.degree}
+   741→                      onChange={e => setEducation(prev => ({ ...prev, degree: e.target.value }))}
+   742→                      placeholder="B.Tech in Computer Science"
+   743→                    />
+   744→                  </div>
+   745→                  <div className="space-y-1">
+   746→                    <Label className="text-xs">College / University</Label>
+   747→                    <Input
+   748→                      value={education.college}
+   749→                      onChange={e => setEducation(prev => ({ ...prev, college: e.target.value }))}
+   750→                      placeholder="University Name"
+   751→                    />
+   752→                  </div>
+   753→                  <div className="grid grid-cols-2 gap-3">
+   754→                    <div className="space-y-1">
+   755→                      <Label className="text-xs">Year</Label>
+   756→                      <Input
+   757→                        value={education.year}
+   758→                        onChange={e => setEducation(prev => ({ ...prev, year: e.target.value }))}
+   759→                        placeholder="2024"
+   760→                      />
+   761→                    </div>
+   762→                    <div className="space-y-1">
+   763→                      <Label className="text-xs">GPA</Label>
+   764→                      <Input
+   765→                        value={education.gpa}
+   766→                        onChange={e => setEducation(prev => ({ ...prev, gpa: e.target.value }))}
+   767→                        placeholder="3.8"
+   768→                      />
+   769→                    </div>
+   770→                  </div>
+   771→                </div>
+   772→              </AccordionContent>
+   773→            </AccordionItem>
+   774→
+   775→            {/* Experience */}
+   776→            <AccordionItem value="experience">
+   777→              <AccordionTrigger>Experience <Badge variant="secondary" className="ml-2 text-xs">{experiences.length}</Badge></AccordionTrigger>
+   778→              <AccordionContent>
+   779→                <div className="space-y-4 pt-1">
+   780→                  {experiences.map((exp, idx) => (
+   781→                    <Card key={idx} className="p-3">
+   782→                      <div className="flex justify-between items-start mb-2">
+   783→                        <span className="text-xs font-medium text-muted-foreground">Experience #{idx + 1}</span>
+   784→                        <Button variant="ghost" size="sm" onClick={() => removeExperience(idx)} className="h-6 w-6 p-0 text-destructive">
+   785→                          <X className="h-3 w-3" />
+   786→                        </Button>
+   787→                      </div>
+   788→                      <div className="grid gap-2">
+   789→                        <div className="grid grid-cols-2 gap-2">
+   790→                          <Input
+   791→                            value={exp.company}
+   792→                            onChange={e => updateExperience(idx, 'company', e.target.value)}
+   793→                            placeholder="Company"
+   794→                            className="text-sm"
+   795→                          />
+   796→                          <Input
+   797→                            value={exp.role}
+   798→                            onChange={e => updateExperience(idx, 'role', e.target.value)}
+   799→                            placeholder="Role"
+   800→                            className="text-sm"
+   801→                          />
+   802→                        </div>
+   803→                        <Input
+   804→                          value={exp.duration}
+   805→                          onChange={e => updateExperience(idx, 'duration', e.target.value)}
+   806→                          placeholder="Duration (e.g., May 2023 - Aug 2023)"
+   807→                          className="text-sm"
+   808→                        />
+   809→                        <Textarea
+   810→                          value={exp.description}
+   811→                          onChange={e => updateExperience(idx, 'description', e.target.value)}
+   812→                          placeholder="Key responsibilities and achievements..."
+   813→                          rows={2}
+   814→                          className="text-sm"
+   815→                        />
+   816→                      </div>
+   817→                    </Card>
+   818→                  ))}
+   819→                  <Button variant="outline" size="sm" onClick={addExperience} className="w-full">
+   820→                    <Plus className="h-4 w-4 mr-1" />
+   821→                    Add Experience
+   822→                  </Button>
+   823→                </div>
+   824→              </AccordionContent>
+   825→            </AccordionItem>
+   826→
+   827→            {/* Projects */}
+   828→            <AccordionItem value="projects">
+   829→              <AccordionTrigger>Projects <Badge variant="secondary" className="ml-2 text-xs">{projects.length}</Badge></AccordionTrigger>
+   830→              <AccordionContent>
+   831→                <div className="space-y-4 pt-1">
+   832→                  {projects.map((proj, idx) => (
+   833→                    <Card key={idx} className="p-3">
+   834→                      <div className="flex justify-between items-start mb-2">
+   835→                        <span className="text-xs font-medium text-muted-foreground">Project #{idx + 1}</span>
+   836→                        <Button variant="ghost" size="sm" onClick={() => removeProject(idx)} className="h-6 w-6 p-0 text-destructive">
+   837→                          <X className="h-3 w-3" />
+   838→                        </Button>
+   839→                      </div>
+   840→                      <div className="grid gap-2">
+   841→                        <Input
+   842→                          value={proj.title}
+   843→                          onChange={e => updateProject(idx, 'title', e.target.value)}
+   844→                          placeholder="Project title"
+   845→                          className="text-sm"
+   846→                        />
+   847→                        <Input
+   848→                          value={proj.tech}
+   849→                          onChange={e => updateProject(idx, 'tech', e.target.value)}
+   850→                          placeholder="Technologies used (comma-separated)"
+   851→                          className="text-sm"
+   852→                        />
+   853→                        <Textarea
+   854→                          value={proj.description}
+   855→                          onChange={e => updateProject(idx, 'description', e.target.value)}
+   856→                          placeholder="Brief description of the project..."
+   857→                          rows={2}
+   858→                          className="text-sm"
+   859→                        />
+   860→                        <Input
+   861→                          value={proj.link}
+   862→                          onChange={e => updateProject(idx, 'link', e.target.value)}
+   863→                          placeholder="Project link (GitHub, live URL)"
+   864→                          className="text-sm"
+   865→                        />
+   866→                      </div>
+   867→                    </Card>
+   868→                  ))}
+   869→                  <Button variant="outline" size="sm" onClick={addProject} className="w-full">
+   870→                    <Plus className="h-4 w-4 mr-1" />
+   871→                    Add Project
+   872→                  </Button>
+   873→                </div>
+   874→              </AccordionContent>
+   875→            </AccordionItem>
+   876→          </Accordion>
+   877→
+   878→          {/* AI Review Button */}
+   879→          <Button
+   880→            onClick={handleAIReview}
+   881→            disabled={reviewing || (skills.length === 0 && !objective)}
+   882→            className="w-full"
+   883→            size="lg"
+   884→          >
+   885→            {reviewing ? (
+   886→              <div className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+   887→            ) : (
+   888→              <Sparkles className="h-4 w-4 mr-2" />
+   889→            )}
+   890→            {reviewing ? 'Analyzing Resume...' : 'AI Review Resume'}
+   891→          </Button>
+   892→
+   893→          {/* AI Review Results */}
+   894→          {aiReview && (
+   895→            <Card className="border-primary/20 bg-primary/5">
+   896→              <CardHeader className="pb-3">
+   897→                <CardTitle className="text-base flex items-center gap-2">
+   898→                  <Star className="h-5 w-5 text-primary" />
+   899→                  AI Resume Score
+   900→                </CardTitle>
+   901→              </CardHeader>
+   902→              <CardContent className="space-y-4">
+   903→                {/* Circular Score */}
+   904→                <div className="flex items-center gap-6">
+   905→                  <div className="relative w-24 h-24 flex-shrink-0">
+   906→                    <svg className="w-24 h-24 -rotate-90" viewBox="0 0 100 100">
+   907→                      <circle cx="50" cy="50" r="42" fill="none" stroke="currentColor" strokeWidth="6" className="text-muted/30" />
+   908→                      <circle
+   909→                        cx="50" cy="50" r="42" fill="none" stroke="currentColor" strokeWidth="6"
+   910→                        className={getScoreColor(aiReview.score)}
+   911→                        strokeDasharray={`${(aiReview.score / 100) * 264} 264`}
+   912→                        strokeLinecap="round"
+   913→                      />
+   914→                    </svg>
+   915→                    <div className="absolute inset-0 flex items-center justify-center">
+   916→                      <span className={`text-2xl font-bold ${getScoreColor(aiReview.score)}`}>{aiReview.score}</span>
+   917→                    </div>
+   918→                  </div>
+   919→                  <div className="space-y-1 text-sm">
+   920→                    <p className="font-medium">Overall Assessment</p>
+   921→                    <p className="text-muted-foreground">
+   922→                      {aiReview.score >= 80 ? 'Excellent resume! Minor improvements possible.' : aiReview.score >= 60 ? 'Good resume with room for improvement.' : 'Resume needs significant improvements.'}
+   923→                    </p>
+   924→                  </div>
+   925→                </div>
+   926→
+   927→                {/* Section Scores */}
+   928→                {aiReview.sections && aiReview.sections.length > 0 && (
+   929→                  <div className="space-y-3">
+   930→                    <p className="text-sm font-medium">Section Scores</p>
+   931→                    {aiReview.sections.map((section, idx) => (
+   932→                      <div key={idx} className="space-y-1">
+   933→                        <div className="flex justify-between text-sm">
+   934→                          <span>{section.name}</span>
+   935→                          <span className={getScoreColor(section.score)}>{section.score}/100</span>
+   936→                        </div>
+   937→                        <Progress value={section.score} className="h-2" />
+   938→                        {section.feedback && <p className="text-xs text-muted-foreground">{section.feedback}</p>}
+   939→                      </div>
+   940→                    ))}
+   941→                  </div>
+   942→                )}
+   943→
+   944→                {/* Suggestions */}
+   945→                {aiReview.suggestions && aiReview.suggestions.length > 0 && (
+   946→                  <div className="space-y-2">
+   947→                    <p className="text-sm font-medium flex items-center gap-1">
+   948→                      <Target className="h-4 w-4" />
+   949→                      Suggestions
+   950→                    </p>
+   951→                    <ul className="space-y-1.5">
+   952→                      {aiReview.suggestions.map((suggestion, idx) => (
+   953→                        <li key={idx} className="text-sm text-muted-foreground flex items-start gap-2">
+   954→                          <AlertTriangle className="h-3.5 w-3.5 mt-0.5 text-amber-500 flex-shrink-0" />
+   955→                          {suggestion}
+   956→                        </li>
+   957→                      ))}
+   958→                    </ul>
+   959→                  </div>
+   960→                )}
+   961→              </CardContent>
+   962→            </Card>
+   963→          )}
+   964→        </div>
+   965→
+   966→        {/* Right: Live Resume Preview */}
+   967→        <div className="hidden lg:block">
+   968→          <div className="sticky top-6">
+   969→            <Card className="overflow-hidden print:shadow-none print:border-none">
+   970→              <div className="p-1 bg-muted text-center">
+   971→                <span className="text-xs text-muted-foreground font-medium">Live Preview</span>
+   972→              </div>
+   973→              <CardContent className="p-6 print:p-8 bg-white text-black" id="resume-preview">
+   974→                {/* Resume Header */}
+   975→                <div className="text-center border-b border-gray-300 pb-4 mb-4">
+   976→                  <h1 className="text-2xl font-bold">{currentUser?.name || 'Your Name'}</h1>
+   977→                  <p className="text-sm text-gray-600 mt-1">
+   978→                    {[currentUser?.email, currentUser?.phone, currentUser?.location].filter(Boolean).join(' | ')}
+   979→                  </p>
+   980→                  {currentUser?.linkedinUrl && (
+   981→                    <p className="text-sm text-blue-600 mt-1">{currentUser.linkedinUrl}</p>
+   982→                  )}
+   983→                </div>
+   984→
+   985→                {/* Objective */}
+   986→                {objective && (
+   987→                  <div className="mb-4">
+   988→                    <h2 className="text-sm font-bold uppercase tracking-wider border-b border-gray-200 pb-1 mb-2">Objective</h2>
+   989→                    <p className="text-sm text-gray-700">{objective}</p>
+   990→                  </div>
+   991→                )}
+   992→
+   993→                {/* Education */}
+   994→                {(education.degree || education.college) && (
+   995→                  <div className="mb-4">
+   996→                    <h2 className="text-sm font-bold uppercase tracking-wider border-b border-gray-200 pb-1 mb-2">Education</h2>
+   997→                    <div className="text-sm">
+   998→                      <p className="font-medium">{education.degree}</p>
+   999→                      {education.college && <p className="text-gray-600">{education.college}</p>}
+  1000→                      <p className="text-gray-500">
+  1001→                        {[education.year, education.gpa ? `GPA: ${education.gpa}` : ''].filter(Boolean).join(' | ')}
+  1002→                      </p>
+  1003→                    </div>
+  1004→                  </div>
+  1005→                )}
+  1006→
+  1007→                {/* Skills */}
+  1008→                {skills.length > 0 && (
+  1009→                  <div className="mb-4">
+  1010→                    <h2 className="text-sm font-bold uppercase tracking-wider border-b border-gray-200 pb-1 mb-2">Skills</h2>
+  1011→                    <p className="text-sm text-gray-700">{skills.join(' • ')}</p>
+  1012→                  </div>
+  1013→                )}
+  1014→
+  1015→                {/* Experience */}
+  1016→                {experiences.length > 0 && (
+  1017→                  <div className="mb-4">
+  1018→                    <h2 className="text-sm font-bold uppercase tracking-wider border-b border-gray-200 pb-1 mb-2">Experience</h2>
+  1019→                    <div className="space-y-3">
+  1020→                      {experiences.map((exp, idx) => (
+  1021→                        <div key={idx} className="text-sm">
+  1022→                          <div className="flex justify-between">
+  1023→                            <p className="font-medium">{exp.role}{exp.company ? ` — ${exp.company}` : ''}</p>
+  1024→                            <p className="text-gray-500 text-xs">{exp.duration}</p>
+  1025→                          </div>
+  1026→                          {exp.description && <p className="text-gray-600 mt-1">{exp.description}</p>}
+  1027→                        </div>
+  1028→                      ))}
+  1029→                    </div>
+  1030→                  </div>
+  1031→                )}
+  1032→
+  1033→                {/* Projects */}
+  1034→                {projects.length > 0 && (
+  1035→                  <div className="mb-4">
+  1036→                    <h2 className="text-sm font-bold uppercase tracking-wider border-b border-gray-200 pb-1 mb-2">Projects</h2>
+  1037→                    <div className="space-y-3">
+  1038→                      {projects.map((proj, idx) => (
+  1039→                        <div key={idx} className="text-sm">
+  1040→                          <div className="flex justify-between items-start">
+  1041→                            <p className="font-medium">{proj.title}</p>
+  1042→                            {proj.link && (
+  1043→                              <span className="text-xs text-blue-600">{proj.link}</span>
+  1044→                            )}
+  1045→                          </div>
+  1046→                          {proj.tech && <p className="text-gray-500 text-xs">{proj.tech}</p>}
+  1047→                          {proj.description && <p className="text-gray-600 mt-1">{proj.description}</p>}
+  1048→                        </div>
+  1049→                      ))}
+  1050→                    </div>
+  1051→                  </div>
+  1052→                )}
+  1053→
+  1054→                {/* Empty State */}
+  1055→                {!objective && !education.degree && skills.length === 0 && experiences.length === 0 && projects.length === 0 && (
+  1056→                  <div className="text-center py-12 text-gray-400">
+  1057→                    <FileText className="h-12 w-12 mx-auto mb-3 opacity-50" />
+  1058→                    <p className="text-sm">Fill in the sections on the left to see your resume preview here.</p>
+  1059→                  </div>
+  1060→                )}
+  1061→              </CardContent>
+  1062→            </Card>
+  1063→          </div>
+  1064→        </div>
+  1065→      </div>
+  1066→    </div>
+  1067→  )
+  1068→}
+  1069→
+  1070→// ============================================================
+  1071→// Main Export
+  1072→// ============================================================
+  1073→
+  1074→interface ProfileViewProps {
+  1075→  view: 'profile' | 'resume-builder'
+  1076→}
+  1077→
+  1078→export function ProfileView({ view }: ProfileViewProps) {
+  1079→  const { currentUser, isLoading } = useAppStore()
+  1080→
+  1081→  if (isLoading || !currentUser) {
+  1082→    return (
+  1083→      <div className="space-y-6 p-6">
+  1084→        <Skeleton className="h-8 w-48" />
+  1085→        <div className="flex justify-center">
+  1086→          <Skeleton className="h-24 w-24 rounded-full" />
+  1087→        </div>
+  1088→        <div className="grid gap-4 md:grid-cols-2">
+  1089→          {Array.from({ length: 6 }).map((_, i) => (
+  1090→            <Skeleton key={i} className="h-10 w-full" />
+  1091→          ))}
+  1092→        </div>
+  1093→      </div>
+  1094→    )
+  1095→  }
+  1096→
+  1097→  if (view === 'resume-builder') {
+  1098→    if (currentUser.role !== 'STUDENT') {
+  1099→      return (
+  1100→        <div className="flex flex-col items-center justify-center py-20 text-center">
+  1101→          <FileText className="h-16 w-16 text-muted-foreground/30 mb-4" />
+  1102→          <h2 className="text-lg font-semibold">Resume Builder</h2>
+  1103→          <p className="text-sm text-muted-foreground mt-1 max-w-md">
+  1104→            The resume builder is available for students only. Switch to a student account to access this feature.
+  1105→          </p>
+  1106→        </div>
+  1107→      )
+  1108→    }
+  1109→    return <ResumeBuilder userId={currentUser.id} />
+  1110→  }
+  1111→
+  1112→  return (
+  1113→    <div className="p-6 max-w-4xl mx-auto">
+  1114→      <div className="mb-6">
+  1115→        <h1 className="text-2xl font-bold">My Profile</h1>
+  1116→        <p className="text-muted-foreground text-sm mt-1">Manage your personal information and preferences</p>
+  1117→      </div>
+  1118→      <ProfileForm userId={currentUser.id} />
+  1119→    </div>
+  1120→  )
+  1121→}
+  1122→
