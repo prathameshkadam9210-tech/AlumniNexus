@@ -1,0 +1,746 @@
+     1→'use client'
+     2→
+     3→import React, { useState, useEffect, useRef, useCallback } from 'react'
+     4→import { useAppStore } from '@/store/app-store'
+     5→import { Button } from '@/components/ui/button'
+     6→import { Card, CardContent } from '@/components/ui/card'
+     7→import { Input } from '@/components/ui/input'
+     8→import { Textarea } from '@/components/ui/textarea'
+     9→import { Badge } from '@/components/ui/badge'
+    10→import { ScrollArea } from '@/components/ui/scroll-area'
+    11→import { Skeleton } from '@/components/ui/skeleton'
+    12→import { Label } from '@/components/ui/label'
+    13→import { Separator } from '@/components/ui/separator'
+    14→import {
+    15→  Dialog,
+    16→  DialogContent,
+    17→  DialogHeader,
+    18→  DialogTitle,
+    19→  DialogDescription,
+    20→  DialogFooter,
+    21→} from '@/components/ui/dialog'
+    22→import {
+    23→  Bot,
+    24→  Send,
+    25→  Plus,
+    26→  MessageSquare,
+    27→  Sparkles,
+    28→  Target,
+    29→  Map,
+    30→  HelpCircle,
+    31→  Building2,
+    32→  PanelLeftClose,
+    33→  PanelLeft,
+    34→  RotateCcw,
+    35→  X,
+    36→  FileText,
+    37→  BarChart3,
+    38→  AlertCircle,
+    39→} from 'lucide-react'
+    40→
+    41→// ============================================================
+    42→// Types
+    43→// ============================================================
+    44→
+    45→interface ChatMessage {
+    46→  id: string
+    47→  role: 'user' | 'assistant'
+    48→  content: string
+    49→  timestamp: Date
+    50→}
+    51→
+    52→interface ChatHistory {
+    53→  id: string
+    54→  title: string
+    55→  preview: string
+    56→  messages: ChatMessage[]
+    57→  createdAt: Date
+    58→  updatedAt: Date
+    59→}
+    60→
+    61→// ============================================================
+    62→// Markdown-like Renderer
+    63→// ============================================================
+    64→
+    65→function renderMarkdown(text: string): React.ReactNode[] {
+    66→  const lines = text.split('\n')
+    67→  const elements: React.ReactNode[] = []
+    68→  let inCodeBlock = false
+    69→  let codeLines: string[] = []
+    70→  let codeKey = 0
+    71→
+    72→  for (let i = 0; i < lines.length; i++) {
+    73→    const line = lines[i]
+    74→
+    75→    // Code blocks
+    76→    if (line.startsWith('```')) {
+    77→      if (inCodeBlock) {
+    78→        elements.push(
+    79→          <pre key={`code-${codeKey++}`} className="bg-muted rounded-md p-3 my-2 overflow-x-auto text-sm">
+    80→            <code>{codeLines.join('\n')}</code>
+    81→          </pre>
+    82→        )
+    83→        codeLines = []
+    84→        inCodeBlock = false
+    85→      } else {
+    86→        inCodeBlock = true
+    87→        codeLines = []
+    88→      }
+    89→      continue
+    90→    }
+    91→
+    92→    if (inCodeBlock) {
+    93→      codeLines.push(line)
+    94→      continue
+    95→    }
+    96→
+    97→    // Empty lines
+    98→    if (line.trim() === '') {
+    99→      elements.push(<br key={`br-${i}`} />)
+   100→      continue
+   101→    }
+   102→
+   103→    // Headers
+   104→    if (line.startsWith('### ')) {
+   105→      elements.push(<h4 key={`h4-${i}`} className="font-semibold mt-3 mb-1">{renderInline(line.slice(4))}</h4>)
+   106→      continue
+   107→    }
+   108→    if (line.startsWith('## ')) {
+   109→      elements.push(<h3 key={`h3-${i}`} className="font-semibold mt-3 mb-1">{renderInline(line.slice(3))}</h3>)
+   110→      continue
+   111→    }
+   112→    if (line.startsWith('# ')) {
+   113→      elements.push(<h2 key={`h2-${i}`} className="font-semibold mt-3 mb-1">{renderInline(line.slice(2))}</h2>)
+   114→      continue
+   115→    }
+   116→
+   117→    // Unordered list items
+   118→    if (line.match(/^[*\-] /)) {
+   119→      const content = line.replace(/^[*\-] /, '')
+   120→      elements.push(
+   121→        <div key={`li-${i}`} className="flex items-start gap-2 ml-2 my-0.5">
+   122→          <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-current flex-shrink-0" />
+   123→          <span>{renderInline(content)}</span>
+   124→        </div>
+   125→      )
+   126→      continue
+   127→    }
+   128→
+   129→    // Ordered list items
+   130→    if (line.match(/^\d+\. /)) {
+   131→      const match = line.match(/^(\d+)\. (.*)$/)
+   132→      if (match) {
+   133→        elements.push(
+   134→          <div key={`oli-${i}`} className="flex items-start gap-2 ml-2 my-0.5">
+   135→            <span className="font-medium flex-shrink-0">{match[1]}.</span>
+   136→            <span>{renderInline(match[2])}</span>
+   137→          </div>
+   138→        )
+   139→        continue
+   140→      }
+   141→    }
+   142→
+   143→    // Regular paragraph
+   144→    elements.push(<p key={`p-${i}`} className="my-1">{renderInline(line)}</p>)
+   145→  }
+   146→
+   147→  return elements
+   148→}
+   149→
+   150→function renderInline(text: string): React.ReactNode {
+   151→  // Bold: **text** or __text__
+   152→  const parts = text.split(/(\*\*[^*]+\*\*|__[^_]+__)/g)
+   153→  return parts.map((part, i) => {
+   154→    if (part.startsWith('**') && part.endsWith('**')) {
+   155→      return <strong key={i}>{part.slice(2, -2)}</strong>
+   156→    }
+   157→    if (part.startsWith('__') && part.endsWith('__')) {
+   158→      return <strong key={i}>{part.slice(2, -2)}</strong>
+   159→    }
+   160→    return part
+   161→  })
+   162→}
+   163→
+   164→// ============================================================
+   165→// Typing Indicator
+   166→// ============================================================
+   167→
+   168→function TypingIndicator() {
+   169→  return (
+   170→    <div className="flex items-center gap-1 px-4 py-3">
+   171→      <div className="flex gap-1">
+   172→        <span className="h-2 w-2 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:0ms]" />
+   173→        <span className="h-2 w-2 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:150ms]" />
+   174→        <span className="h-2 w-2 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:300ms]" />
+   175→      </div>
+   176→    </div>
+   177→  )
+   178→}
+   179→
+   180→// ============================================================
+   181→// Quick Action Dialog
+   182→// ============================================================
+   183→
+   184→interface QuickActionDialogProps {
+   185→  open: boolean
+   186→  onOpenChange: (open: boolean) => void
+   187→  title: string
+   188→  description: string
+   189→  fields: { name: string; label: string; placeholder: string; defaultValue?: string }[]
+   190→  onSubmit: (values: Record<string, string>) => void
+   191→  loading: boolean
+   192→}
+   193→
+   194→function QuickActionDialog({ open, onOpenChange, title, description, fields, onSubmit, loading }: QuickActionDialogProps) {
+   195→  const [values, setValues] = useState<Record<string, string>>(() => {
+   196→    const defaults: Record<string, string> = {}
+   197→    fields.forEach(f => {
+   198→      defaults[f.name] = f.defaultValue || ''
+   199→    })
+   200→    return defaults
+   201→  })
+   202→
+   203→  return (
+   204→    <Dialog open={open} onOpenChange={onOpenChange}>
+   205→      <DialogContent>
+   206→        <DialogHeader>
+   207→          <DialogTitle>{title}</DialogTitle>
+   208→          <DialogDescription>{description}</DialogDescription>
+   209→        </DialogHeader>
+   210→        <div className="grid gap-4 py-2">
+   211→          {fields.map(field => (
+   212→            <div key={field.name} className="space-y-2">
+   213→              <Label htmlFor={field.name}>{field.label}</Label>
+   214→              {field.name === 'message' ? (
+   215→                <Textarea
+   216→                  id={field.name}
+   217→                  value={values[field.name] || ''}
+   218→                  onChange={e => setValues(prev => ({ ...prev, [field.name]: e.target.value }))}
+   219→                  placeholder={field.placeholder}
+   220→                  rows={3}
+   221→                />
+   222→              ) : (
+   223→                <Input
+   224→                  id={field.name}
+   225→                  value={values[field.name] || ''}
+   226→                  onChange={e => setValues(prev => ({ ...prev, [field.name]: e.target.value }))}
+   227→                  placeholder={field.placeholder}
+   228→                />
+   229→              )}
+   230→            </div>
+   231→          ))}
+   232→        </div>
+   233→        <DialogFooter>
+   234→          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+   235→          <Button
+   236→            onClick={() => {
+   237→              onSubmit(values)
+   238→              onOpenChange(false)
+   239→            }}
+   240→            disabled={loading || Object.values(values).some(v => !v.trim())}
+   241→          >
+   242→            {loading ? (
+   243→              <div className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+   244→            ) : (
+   245→              <Sparkles className="h-4 w-4 mr-1" />
+   246→            )}
+   247→            Generate
+   248→          </Button>
+   249→        </DialogFooter>
+   250→      </DialogContent>
+   251→    </Dialog>
+   252→  )
+   253→}
+   254→
+   255→// ============================================================
+   256→// Main AI Assistant Component
+   257→// ============================================================
+   258→
+   259→export function AIAssistantView() {
+   260→  const { currentUser, addToast, setLoading } = useAppStore()
+   261→  const [histories, setHistories] = useState<ChatHistory[]>([])
+   262→  const [activeHistoryId, setActiveHistoryId] = useState<string | null>(null)
+   263→  const [messages, setMessages] = useState<ChatMessage[]>([])
+   264→  const [input, setInput] = useState('')
+   265→  const [isTyping, setIsTyping] = useState(false)
+   266→  const [sidebarOpen, setSidebarOpen] = useState(true)
+   267→  const [error, setError] = useState<string | null>(null)
+   268→
+   269→  // Quick action dialog
+   270→  const [dialogOpen, setDialogOpen] = useState(false)
+   271→  const [dialogKey, setDialogKey] = useState(0)
+   272→  const [dialogConfig, setDialogConfig] = useState<{
+   273→    title: string
+   274→    description: string
+   275→    fields: { name: string; label: string; placeholder: string; defaultValue?: string }[]
+   276→    action: string
+   277→  } | null>(null)
+   278→
+   279→  const chatEndRef = useRef<HTMLDivElement>(null)
+   280→  const textareaRef = useRef<HTMLTextAreaElement>(null)
+   281→
+   282→  // Parse user skills from profile
+   283→  const getUserSkills = useCallback((): string[] => {
+   284→    if (!currentUser?.skills) return []
+   285→    try {
+   286→      const parsed = JSON.parse(currentUser.skills)
+   287→      if (Array.isArray(parsed)) return parsed
+   288→    } catch {
+   289→      return currentUser.skills.split(',').map(s => s.trim()).filter(Boolean)
+   290→    }
+   291→    return []
+   292→  }, [currentUser?.skills])
+   293→
+   294→  // Auto-scroll to bottom
+   295→  useEffect(() => {
+   296→    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+   297→  }, [messages, isTyping])
+   298→
+   299→  // Create initial chat if none
+   300→  useEffect(() => {
+   301→    if (histories.length === 0) {
+   302→      const welcomeMsg: ChatMessage = {
+   303→        id: crypto.randomUUID(),
+   304→        role: 'assistant',
+   305→        content: `Hello! I'm your AI Career Assistant. I can help you with:
+   306→
+   307→- **Resume reviews** and improvement suggestions
+   308→- **Skill gap analysis** for your target roles
+   309→- **Career roadmaps** to plan your professional journey
+   310→- **Interview preparation** with practice questions
+   311→- **Company suggestions** based on your skills
+   312→
+   313→Feel free to ask me anything about your career development!`,
+   314→        timestamp: new Date(),
+   315→      }
+   316→      const newHistory: ChatHistory = {
+   317→        id: crypto.randomUUID(),
+   318→        title: 'New Conversation',
+   319→        preview: 'Start chatting about your career...',
+   320→        messages: [welcomeMsg],
+   321→        createdAt: new Date(),
+   322→        updatedAt: new Date(),
+   323→      }
+   324→      setHistories([newHistory])
+   325→      setMessages([welcomeMsg])
+   326→      setActiveHistoryId(newHistory.id)
+   327→    }
+   328→  }, [])
+   329→
+   330→  // Update active history messages
+   331→  useEffect(() => {
+   332→    if (!activeHistoryId || messages.length === 0) return
+   333→    setHistories(prev =>
+   334→      prev.map(h => {
+   335→        if (h.id !== activeHistoryId) return h
+   336→        const firstUserMsg = messages.find(m => m.role === 'user')
+   337→        return {
+   338→          ...h,
+   339→          messages,
+   340→          title: firstUserMsg ? firstUserMsg.content.slice(0, 40) + (firstUserMsg.content.length > 40 ? '...' : '') : h.title,
+   341→          preview: messages[messages.length - 1]?.content.slice(0, 60) + (messages[messages.length - 1]?.content.length > 60 ? '...' : '') || '',
+   342→          updatedAt: new Date(),
+   343→        }
+   344→      })
+   345→    )
+   346→  }, [messages, activeHistoryId])
+   347→
+   348→  const createNewChat = () => {
+   349→    const welcomeMsg: ChatMessage = {
+   350→      id: crypto.randomUUID(),
+   351→      role: 'assistant',
+   352→      content: 'How can I help you with your career today?',
+   353→      timestamp: new Date(),
+   354→    }
+   355→    const newHistory: ChatHistory = {
+   356→      id: crypto.randomUUID(),
+   357→      title: 'New Conversation',
+   358→      preview: 'Start chatting...',
+   359→      messages: [welcomeMsg],
+   360→      createdAt: new Date(),
+   361→      updatedAt: new Date(),
+   362→    }
+   363→    setHistories(prev => [newHistory, ...prev])
+   364→    setMessages([welcomeMsg])
+   365→    setActiveHistoryId(newHistory.id)
+   366→    setError(null)
+   367→  }
+   368→
+   369→  const switchToHistory = (historyId: string) => {
+   370→    const history = histories.find(h => h.id === historyId)
+   371→    if (history) {
+   372→      setMessages(history.messages)
+   373→      setActiveHistoryId(historyId)
+   374→      setError(null)
+   375→    }
+   376→  }
+   377→
+   378→  const addMessage = (role: 'user' | 'assistant', content: string) => {
+   379→    const msg: ChatMessage = {
+   380→      id: crypto.randomUUID(),
+   381→      role,
+   382→      content,
+   383→      timestamp: new Date(),
+   384→    }
+   385→    setMessages(prev => [...prev, msg])
+   386→  }
+   387→
+   388→  const sendMessage = async (message: string) => {
+   389→    if (!message.trim() || isTyping) return
+   390→
+   391→    addMessage('user', message.trim())
+   392→    setInput('')
+   393→    setIsTyping(true)
+   394→    setError(null)
+   395→
+   396→    // Reset textarea height
+   397→    if (textareaRef.current) {
+   398→      textareaRef.current.style.height = 'auto'
+   399→    }
+   400→
+   401→    try {
+   402→      const res = await fetch('/api/ai', {
+   403→        method: 'POST',
+   404→        headers: { 'Content-Type': 'application/json' },
+   405→        body: JSON.stringify({ action: 'career-chat', data: { message: message.trim() } }),
+   406→      })
+   407→      if (!res.ok) throw new Error('Failed to get response')
+   408→      const data = await res.json()
+   409→      const responseText = typeof data === 'string' ? data : data.response || data.message || JSON.stringify(data)
+   410→      addMessage('assistant', responseText)
+   411→    } catch (err) {
+   412→      setError(err instanceof Error ? err.message : 'Something went wrong')
+   413→    } finally {
+   414→      setIsTyping(false)
+   415→    }
+   416→  }
+   417→
+   418→  const sendQuickAction = async (action: string, data: Record<string, string>) => {
+   419→    setIsTyping(true)
+   420→    setError(null)
+   421→
+   422→    // Add a user message showing what they asked
+   423→    const actionLabels: Record<string, string> = {
+   424→      'resume-review': 'Review my resume for the role of',
+   425→      'skill-gap': 'Analyze my skill gap for the role of',
+   426→      'career-roadmap': 'Create a career roadmap from',
+   427→      'interview-questions': 'Generate interview questions for',
+   428→      'company-suggestions': 'Suggest companies matching my skills',
+   429→    }
+   430→
+   431→    const label = actionLabels[action] || 'Quick action'
+   432→    const summary = Object.values(data).filter(Boolean).join(', ')
+   433→    addMessage('user', `${label}${summary ? ': ' + summary : ''}`)
+   434→
+   435→    try {
+   436→      const res = await fetch('/api/ai', {
+   437→        method: 'POST',
+   438→        headers: { 'Content-Type': 'application/json' },
+   439→        body: JSON.stringify({ action, data }),
+   440→      })
+   441→      if (!res.ok) throw new Error('Failed to get response')
+   442→      const result = await res.json()
+   443→      const responseText = typeof result === 'string' ? result : result.response || result.message || JSON.stringify(result)
+   444→      addMessage('assistant', responseText)
+   445→    } catch (err) {
+   446→      setError(err instanceof Error ? err.message : 'Something went wrong')
+   447→    } finally {
+   448→      setIsTyping(false)
+   449→    }
+   450→  }
+   451→
+   452→  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+   453→    if (e.key === 'Enter' && !e.shiftKey) {
+   454→      e.preventDefault()
+   455→      sendMessage(input)
+   456→    }
+   457→  }
+   458→
+   459→  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+   460→    setInput(e.target.value)
+   461→    // Auto-resize
+   462→    const target = e.target
+   463→    target.style.height = 'auto'
+   464→    target.style.height = Math.min(target.scrollHeight, 150) + 'px'
+   465→  }
+   466→
+   467→  const openQuickAction = (action: string) => {
+   468→    const skills = getUserSkills()
+   469→    const skillsStr = skills.join(', ')
+   470→
+   471→    switch (action) {
+   472→      case 'resume-review':
+   473→        setDialogConfig({
+   474→          title: 'Review Resume',
+   475→          description: 'Get AI-powered feedback on your resume for a specific role.',
+   476→          fields: [
+   477→            { name: 'targetRole', label: 'Target Role', placeholder: 'e.g. Frontend Developer' },
+   478→            { name: 'resumeContent', label: 'Resume Summary (optional)', placeholder: 'Paste key points from your resume...' },
+   479→          ],
+   480→          action: 'resume-review',
+   481→        })
+   482→        break
+   483→      case 'skill-gap':
+   484→        setDialogConfig({
+   485→          title: 'Skill Gap Analysis',
+   486→          description: 'Identify skills you need to develop for your target role.',
+   487→          fields: [
+   488→            { name: 'targetRole', label: 'Target Role', placeholder: 'e.g. Full Stack Developer' },
+   489→            { name: 'userSkills', label: 'Your Skills', placeholder: 'React, Python, SQL...', defaultValue: skillsStr },
+   490→          ],
+   491→          action: 'skill-gap',
+   492→        })
+   493→        break
+   494→      case 'career-roadmap':
+   495→        setDialogConfig({
+   496→          title: 'Career Roadmap',
+   497→          description: 'Get a personalized career roadmap to reach your goals.',
+   498→          fields: [
+   499→            { name: 'currentRole', label: 'Current Role / Status', placeholder: 'e.g. CS Student', defaultValue: currentUser?.role === 'STUDENT' ? 'Student' : currentUser?.designation || '' },
+   500→            { name: 'targetRole', label: 'Target Role', placeholder: 'e.g. Senior Software Engineer' },
+   501→          ],
+   502→          action: 'career-roadmap',
+   503→        })
+   504→        break
+   505→      case 'interview-questions':
+   506→        setDialogConfig({
+   507→          title: 'Interview Questions',
+   508→          description: 'Generate relevant interview questions for practice.',
+   509→          fields: [
+   510→            { name: 'role', label: 'Job Role', placeholder: 'e.g. Software Engineer' },
+   511→          ],
+   512→          action: 'interview-questions',
+   513→        })
+   514→        break
+   515→      case 'company-suggestions':
+   516→        setDialogConfig({
+   517→          title: 'Company Suggestions',
+   518→          description: 'Get company recommendations based on your skill set.',
+   519→          fields: [
+   520→            { name: 'userSkills', label: 'Your Skills', placeholder: 'React, TypeScript, Node.js...', defaultValue: skillsStr },
+   521→          ],
+   522→          action: 'company-suggestions',
+   523→        })
+   524→        break
+   525→    }
+   526→    setDialogOpen(true)
+   527→    setDialogKey(k => k + 1)
+   528→  }
+   529→
+   530→  const handleDialogSubmit = (values: Record<string, string>) => {
+   531→    if (!dialogConfig) return
+   532→    sendQuickAction(dialogConfig.action, values)
+   533→  }
+   534→
+   535→  const retryLastMessage = () => {
+   536→    const lastUserMsg = [...messages].reverse().find(m => m.role === 'user')
+   537→    if (lastUserMsg) {
+   538→      setMessages(prev => prev.slice(0, -1))
+   539→      sendMessage(lastUserMsg.content)
+   540→    }
+   541→    setError(null)
+   542→  }
+   543→
+   544→  const formatTime = (date: Date) => {
+   545→    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+   546→  }
+   547→
+   548→  const quickActions = [
+   549→    { label: 'Review Resume', icon: FileText, action: 'resume-review' },
+   550→    { label: 'Skill Gap', icon: BarChart3, action: 'skill-gap' },
+   551→    { label: 'Career Roadmap', icon: Map, action: 'career-roadmap' },
+   552→    { label: 'Interview Prep', icon: HelpCircle, action: 'interview-questions' },
+   553→    { label: 'Companies', icon: Building2, action: 'company-suggestions' },
+   554→  ]
+   555→
+   556→  return (
+   557→    <div className="flex h-[calc(100vh-4rem)] overflow-hidden">
+   558→      {/* Left Panel - Chat History */}
+   559→      <aside
+   560→        className={`${sidebarOpen ? 'w-72' : 'w-0'} border-r bg-muted/30 flex-shrink-0 transition-all duration-200 overflow-hidden flex flex-col`}
+   561→      >
+   562→        <div className="p-3 border-b">
+   563→          <Button onClick={createNewChat} variant="outline" className="w-full justify-start gap-2">
+   564→            <Plus className="h-4 w-4" />
+   565→            New Chat
+   566→          </Button>
+   567→        </div>
+   568→        <ScrollArea className="flex-1">
+   569→          <div className="p-2 space-y-1">
+   570→            {histories.map(history => (
+   571→              <button
+   572→                key={history.id}
+   573→                onClick={() => switchToHistory(history.id)}
+   574→                className={`w-full text-left p-3 rounded-lg transition-colors hover:bg-accent ${
+   575→                  activeHistoryId === history.id ? 'bg-accent' : ''
+   576→                }`}
+   577→              >
+   578→                <div className="flex items-start gap-2">
+   579→                  <MessageSquare className="h-4 w-4 mt-0.5 text-muted-foreground flex-shrink-0" />
+   580→                  <div className="min-w-0 flex-1">
+   581→                    <p className="text-sm font-medium truncate">{history.title}</p>
+   582→                    <p className="text-xs text-muted-foreground truncate mt-0.5">{history.preview}</p>
+   583→                    <p className="text-xs text-muted-foreground/60 mt-1">
+   584→                      {history.updatedAt.toLocaleDateString([], { month: 'short', day: 'numeric' })}
+   585→                    </p>
+   586→                  </div>
+   587→                </div>
+   588→              </button>
+   589→            ))}
+   590→          </div>
+   591→        </ScrollArea>
+   592→      </aside>
+   593→
+   594→      {/* Main Chat Area */}
+   595→      <div className="flex-1 flex flex-col min-w-0">
+   596→        {/* Chat Header */}
+   597→        <header className="flex items-center justify-between px-4 py-3 border-b bg-background">
+   598→          <div className="flex items-center gap-3">
+   599→            <Button
+   600→              variant="ghost"
+   601→              size="icon"
+   602→              onClick={() => setSidebarOpen(!sidebarOpen)}
+   603→              className="shrink-0"
+   604→              aria-label="Toggle sidebar"
+   605→            >
+   606→              {sidebarOpen ? <PanelLeftClose className="h-5 w-5" /> : <PanelLeft className="h-5 w-5" />}
+   607→            </Button>
+   608→            <div className="flex items-center gap-2">
+   609→              <Bot className="h-5 w-5 text-primary" />
+   610→              <h1 className="font-semibold">AI Career Assistant</h1>
+   611→              <Badge variant="secondary" className="text-xs hidden sm:inline-flex">GPT-Powered</Badge>
+   612→            </div>
+   613→          </div>
+   614→        </header>
+   615→
+   616→        {/* Messages Area */}
+   617→        <ScrollArea className="flex-1">
+   618→          <div className="max-w-3xl mx-auto px-4 py-4 space-y-4">
+   619→            {messages.map(msg => (
+   620→              <div
+   621→                key={msg.id}
+   622→                className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+   623→              >
+   624→                <div
+   625→                  className={`max-w-[85%] sm:max-w-[75%] rounded-2xl px-4 py-3 ${
+   626→                    msg.role === 'user'
+   627→                      ? 'bg-primary text-primary-foreground rounded-br-md'
+   628→                      : 'bg-muted rounded-bl-md'
+   629→                  }`}
+   630→                >
+   631→                  <div className="text-sm leading-relaxed whitespace-pre-wrap break-words">
+   632→                    {msg.role === 'assistant' ? renderMarkdown(msg.content) : msg.content}
+   633→                  </div>
+   634→                  <p
+   635→                    className={`text-[10px] mt-1.5 ${
+   636→                      msg.role === 'user' ? 'text-primary-foreground/60' : 'text-muted-foreground'
+   637→                    }`}
+   638→                  >
+   639→                    {formatTime(msg.timestamp)}
+   640→                  </p>
+   641→                </div>
+   642→              </div>
+   643→            ))}
+   644→
+   645→            {/* Typing Indicator */}
+   646→            {isTyping && (
+   647→              <div className="flex justify-start">
+   648→                <div className="bg-muted rounded-2xl rounded-bl-md">
+   649→                  <TypingIndicator />
+   650→                </div>
+   651→              </div>
+   652→            )}
+   653→
+   654→            {/* Error with Retry */}
+   655→            {error && (
+   656→              <div className="flex justify-start">
+   657→                <div className="bg-destructive/10 border border-destructive/20 rounded-2xl rounded-bl-md px-4 py-3 max-w-[85%]">
+   658→                  <div className="flex items-center gap-2 text-sm text-destructive">
+   659→                    <AlertCircle className="h-4 w-4 flex-shrink-0" />
+   660→                    <span>{error}</span>
+   661→                  </div>
+   662→                  <Button
+   663→                    variant="ghost"
+   664→                    size="sm"
+   665→                    onClick={retryLastMessage}
+   666→                    className="mt-2 h-7 text-xs gap-1 text-destructive hover:text-destructive"
+   667→                  >
+   668→                    <RotateCcw className="h-3 w-3" />
+   669→                    Retry
+   670→                  </Button>
+   671→                </div>
+   672→              </div>
+   673→            )}
+   674→
+   675→            <div ref={chatEndRef} />
+   676→          </div>
+   677→        </ScrollArea>
+   678→
+   679→        {/* Quick Actions & Input */}
+   680→        <div className="border-t bg-background">
+   681→          {/* Quick Actions */}
+   682→          <div className="max-w-3xl mx-auto px-4 py-2">
+   683→            <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+   684→              {quickActions.map(qa => (
+   685→                <Button
+   686→                  key={qa.action}
+   687→                  variant="outline"
+   688→                  size="sm"
+   689→                  onClick={() => openQuickAction(qa.action)}
+   690→                  disabled={isTyping}
+   691→                  className="flex-shrink-0 gap-1.5 h-8 text-xs"
+   692→                >
+   693→                  <qa.icon className="h-3.5 w-3.5" />
+   694→                  <span className="hidden sm:inline">{qa.label}</span>
+   695→                </Button>
+   696→              ))}
+   697→            </div>
+   698→          </div>
+   699→
+   700→          {/* Input Area */}
+   701→          <div className="max-w-3xl mx-auto px-4 pb-4">
+   702→            <div className="flex items-end gap-2 rounded-xl border bg-background p-2 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2">
+   703→              <Textarea
+   704→                ref={textareaRef}
+   705→                value={input}
+   706→                onChange={handleTextareaChange}
+   707→                onKeyDown={handleKeyDown}
+   708→                placeholder="Ask about careers, skills, interviews..."
+   709→                className="min-h-[36px] max-h-[150px] resize-none border-0 bg-transparent focus-visible:ring-0 p-1 text-sm flex-1"
+   710→                rows={1}
+   711→                disabled={isTyping}
+   712→              />
+   713→              <Button
+   714→                size="icon"
+   715→                onClick={() => sendMessage(input)}
+   716→                disabled={!input.trim() || isTyping}
+   717→                className="h-8 w-8 rounded-lg shrink-0"
+   718→                aria-label="Send message"
+   719→              >
+   720→                <Send className="h-4 w-4" />
+   721→              </Button>
+   722→            </div>
+   723→            <p className="text-[10px] text-muted-foreground/60 text-center mt-1.5">
+   724→              AI responses are generated suggestions. Verify information independently.
+   725→            </p>
+   726→          </div>
+   727→        </div>
+   728→      </div>
+   729→
+   730→      {/* Quick Action Dialog */}
+   731→      {dialogConfig && (
+   732→        <QuickActionDialog
+   733→          key={dialogKey}
+   734→          open={dialogOpen}
+   735→          onOpenChange={setDialogOpen}
+   736→          title={dialogConfig.title}
+   737→          description={dialogConfig.description}
+   738→          fields={dialogConfig.fields}
+   739→          onSubmit={handleDialogSubmit}
+   740→          loading={isTyping}
+   741→        />
+   742→      )}
+   743→    </div>
+   744→  )
+   745→}
+   746→

@@ -1,0 +1,626 @@
+     1→'use client'
+     2→
+     3→import { useAppStore } from '@/store/app-store'
+     4→import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+     5→import { Button } from '@/components/ui/button'
+     6→import { Badge } from '@/components/ui/badge'
+     7→import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+     8→import { Progress } from '@/components/ui/progress'
+     9→import {
+    10→  Briefcase,
+    11→  Users,
+    12→  Calendar,
+    13→  Brain,
+    14→  GraduationCap,
+    15→  FileText,
+    16→  Search,
+    17→  UserPlus,
+    18→  BarChart3,
+    19→  Bell,
+    20→  ArrowRight,
+    21→  Clock,
+    22→  MapPin,
+    23→  Building,
+    24→  Mail,
+    25→  TrendingUp,
+    26→  BookOpen,
+    27→  MessageSquare,
+    28→  Shield,
+    29→} from 'lucide-react'
+    30→
+    31→// --- Stat Card ---
+    32→function StatCard({ icon: Icon, label, value, color }: { icon: React.ComponentType<{ className?: string }>; label: string; value: number | string; color: string }) {
+    33→  return (
+    34→    <Card>
+    35→      <CardContent className="p-4 md:p-6">
+    36→        <div className="flex items-start justify-between">
+    37→          <div className="space-y-1">
+    38→            <p className="text-sm text-muted-foreground">{label}</p>
+    39→            <p className="text-2xl md:text-3xl font-bold tracking-tight">{value}</p>
+    40→          </div>
+    41→          <div className={`w-10 h-10 rounded-lg ${color} flex items-center justify-center flex-shrink-0`}>
+    42→            <Icon className="w-5 h-5 text-white" />
+    43→          </div>
+    44→        </div>
+    45→      </CardContent>
+    46→    </Card>
+    47→  )
+    48→}
+    49→
+    50→// --- Quick Action Card ---
+    51→function QuickActionCard({ icon: Icon, title, description, onClick, color }: { icon: React.ComponentType<{ className?: string }>; title: string; description: string; onClick: () => void; color: string }) {
+    52→  return (
+    53→    <Card className="group hover:shadow-md transition-shadow cursor-pointer" onClick={onClick}>
+    54→      <CardContent className="p-4 md:p-5 flex items-start gap-4">
+    55→        <div className={`w-10 h-10 rounded-lg ${color} flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform`}>
+    56→          <Icon className="w-5 h-5 text-white" />
+    57→        </div>
+    58→        <div className="min-w-0">
+    59→          <p className="font-semibold text-sm">{title}</p>
+    60→          <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{description}</p>
+    61→        </div>
+    62→      </CardContent>
+    63→    </Card>
+    64→  )
+    65→}
+    66→
+    67→// --- Notification Item ---
+    68→function NotificationRow({ title, message, time, isRead }: { title: string; message: string; time: string; isRead: boolean }) {
+    69→  return (
+    70→    <div className={`flex items-start gap-3 py-3 ${!isRead ? 'bg-emerald-50/50 dark:bg-emerald-950/20 -mx-2 px-2 rounded-lg' : ''}`}>
+    71→      <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${!isRead ? 'bg-emerald-500' : 'bg-transparent'}`} />
+    72→      <div className="min-w-0 flex-1">
+    73→        <p className="text-sm font-medium truncate">{title}</p>
+    74→        <p className="text-xs text-muted-foreground line-clamp-1">{message}</p>
+    75→      </div>
+    76→      <span className="text-xs text-muted-foreground whitespace-nowrap flex-shrink-0">{time}</span>
+    77→    </div>
+    78→  )
+    79→}
+    80→
+    81→// --- Utility ---
+    82→function formatRelativeTime(dateStr: string): string {
+    83→  const date = new Date(dateStr)
+    84→  const now = new Date()
+    85→  const diff = now.getTime() - date.getTime()
+    86→  const mins = Math.floor(diff / 60000)
+    87→  if (mins < 1) return 'just now'
+    88→  if (mins < 60) return `${mins}m ago`
+    89→  const hrs = Math.floor(mins / 60)
+    90→  if (hrs < 24) return `${hrs}h ago`
+    91→  const days = Math.floor(hrs / 24)
+    92→  if (days < 7) return `${days}d ago`
+    93→  return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+    94→}
+    95→
+    96→function formatDate(dateStr: string): string {
+    97→  return new Date(dateStr).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+    98→}
+    99→
+   100→// --- Student Dashboard ---
+   101→function StudentDashboard() {
+   102→  const currentUser = useAppStore((s) => s.currentUser)!
+   103→  const analytics = useAppStore((s) => s.analytics)
+   104→  const jobs = useAppStore((s) => s.jobs)
+   105→  const events = useAppStore((s) => s.events)
+   106→  const notifications = useAppStore((s) => s.notifications)
+   107→  const applications = useAppStore((s) => s.applications)
+   108→  const setCurrentView = useAppStore((s) => s.setCurrentView)
+   109→
+   110→  const totalUsers = analytics.find((a) => a.metric === 'total_users')?.value ?? 0
+   111→  const openJobs = analytics.find((a) => a.metric === 'open_jobs')?.value ?? jobs.filter((j) => j.status === 'OPEN').length
+   112→  const activeMentorships = analytics.find((a) => a.metric === 'active_mentorships')?.value ?? 0
+   113→  const totalEvents = analytics.find((a) => a.metric === 'total_events')?.value ?? events.length
+   114→
+   115→  const recentJobs = jobs.slice(0, 3)
+   116→  const recentEvents = events.slice(0, 3)
+   117→  const recentNotifs = notifications.slice(0, 3)
+   118→
+   119→  return (
+   120→    <div className="space-y-6">
+   121→      {/* Welcome */}
+   122→      <div>
+   123→        <h1 className="text-2xl md:text-3xl font-bold">Welcome back, {currentUser.name.split(' ')[0]}!</h1>
+   124→        <p className="text-muted-foreground mt-1">Here&apos;s what&apos;s happening in your career journey today.</p>
+   125→      </div>
+   126→
+   127→      {/* Stats Row */}
+   128→      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+   129→        <StatCard icon={Users} label="Total Users" value={totalUsers || '-'} color="bg-emerald-500" />
+   130→        <StatCard icon={Briefcase} label="Open Jobs" value={openJobs || '-'} color="bg-teal-500" />
+   131→        <StatCard icon={Brain} label="Mentorships" value={activeMentorships || '-'} color="bg-cyan-500" />
+   132→        <StatCard icon={Calendar} label="Events" value={totalEvents || '-'} color="bg-emerald-600" />
+   133→      </div>
+   134→
+   135→      {/* Quick Actions */}
+   136→      <div>
+   137→        <h2 className="text-lg font-semibold mb-3">Quick Actions</h2>
+   138→        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+   139→          <QuickActionCard icon={Briefcase} title="Apply to Jobs" description="Browse and apply to open positions" onClick={() => setCurrentView('jobs')} color="bg-emerald-500" />
+   140→          <QuickActionCard icon={Users} title="Book a Mentor" description="Schedule a session with an alumni mentor" onClick={() => setCurrentView('mentorship')} color="bg-teal-500" />
+   141→          <QuickActionCard icon={GraduationCap} title="Build Resume" description="Create a professional resume with AI" onClick={() => setCurrentView('resume-builder')} color="bg-cyan-500" />
+   142→          <QuickActionCard icon={Brain} title="AI Chat" description="Get career advice from your AI assistant" onClick={() => setCurrentView('ai-assistant')} color="bg-emerald-600" />
+   143→        </div>
+   144→      </div>
+   145→
+   146→      {/* Two-column: Recent Jobs + Recent Events */}
+   147→      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+   148→        {/* Recent Jobs */}
+   149→        <Card>
+   150→          <CardHeader className="pb-3">
+   151→            <div className="flex items-center justify-between">
+   152→              <CardTitle className="text-base font-semibold">Recent Jobs</CardTitle>
+   153→              <Button variant="ghost" size="sm" className="text-emerald-600 hover:text-emerald-500" onClick={() => setCurrentView('jobs')}>
+   154→                View All <ArrowRight className="w-4 h-4 ml-1" />
+   155→              </Button>
+   156→            </div>
+   157→          </CardHeader>
+   158→          <CardContent>
+   159→            {recentJobs.length === 0 ? (
+   160→              <p className="text-sm text-muted-foreground py-4 text-center">No jobs posted yet.</p>
+   161→            ) : (
+   162→              <div className="space-y-1">
+   163→                {recentJobs.map((job) => {
+   164→                  const alreadyApplied = applications.some((a) => a.jobId === job.id)
+   165→                  return (
+   166→                    <div key={job.id} className="flex items-start gap-3 py-3 border-b last:border-0">
+   167→                      <div className="w-10 h-10 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center flex-shrink-0">
+   168→                        <Building className="w-5 h-5 text-emerald-600" />
+   169→                      </div>
+   170→                      <div className="min-w-0 flex-1">
+   171→                        <p className="text-sm font-medium truncate">{job.title}</p>
+   172→                        <p className="text-xs text-muted-foreground truncate">{job.company} &middot; {job.location}</p>
+   173→                        <div className="flex items-center gap-2 mt-1.5">
+   174→                          <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{job.type}</Badge>
+   175→                          {alreadyApplied && <Badge className="text-[10px] px-1.5 py-0 bg-emerald-100 text-emerald-700 border-0">Applied</Badge>}
+   176→                        </div>
+   177→                      </div>
+   178→                      <span className="text-xs text-muted-foreground whitespace-nowrap flex-shrink-0">{formatRelativeTime(job.createdAt)}</span>
+   179→                    </div>
+   180→                  )
+   181→                })}
+   182→              </div>
+   183→            )}
+   184→          </CardContent>
+   185→        </Card>
+   186→
+   187→        {/* Upcoming Events */}
+   188→        <Card>
+   189→          <CardHeader className="pb-3">
+   190→            <div className="flex items-center justify-between">
+   191→              <CardTitle className="text-base font-semibold">Upcoming Events</CardTitle>
+   192→              <Button variant="ghost" size="sm" className="text-emerald-600 hover:text-emerald-500" onClick={() => setCurrentView('events')}>
+   193→                View All <ArrowRight className="w-4 h-4 ml-1" />
+   194→              </Button>
+   195→            </div>
+   196→          </CardHeader>
+   197→          <CardContent>
+   198→            {recentEvents.length === 0 ? (
+   199→              <p className="text-sm text-muted-foreground py-4 text-center">No upcoming events.</p>
+   200→            ) : (
+   201→              <div className="space-y-1">
+   202→                {recentEvents.map((event) => (
+   203→                  <div key={event.id} className="flex items-start gap-3 py-3 border-b last:border-0">
+   204→                    <div className="w-10 h-10 rounded-lg bg-teal-100 dark:bg-teal-900/30 flex items-center justify-center flex-shrink-0">
+   205→                      <Calendar className="w-5 h-5 text-teal-600" />
+   206→                    </div>
+   207→                    <div className="min-w-0 flex-1">
+   208→                      <p className="text-sm font-medium truncate">{event.title}</p>
+   209→                      <div className="flex items-center gap-1.5 mt-1 text-xs text-muted-foreground">
+   210→                        <Clock className="w-3 h-3" />
+   211→                        <span>{formatDate(event.date)}</span>
+   212→                        {event.time && <span>&middot; {event.time}</span>}
+   213→                      </div>
+   214→                      {event.location && (
+   215→                        <div className="flex items-center gap-1.5 mt-0.5 text-xs text-muted-foreground">
+   216→                          <MapPin className="w-3 h-3" />
+   217→                          <span className="truncate">{event.location}</span>
+   218→                        </div>
+   219→                      )}
+   220→                    </div>
+   221→                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 flex-shrink-0">
+   222→                      {event.type}
+   223→                    </Badge>
+   224→                  </div>
+   225→                ))}
+   226→              </div>
+   227→            )}
+   228→          </CardContent>
+   229→        </Card>
+   230→      </div>
+   231→
+   232→      {/* Recent Notifications */}
+   233→      {recentNotifs.length > 0 && (
+   234→        <Card>
+   235→          <CardHeader className="pb-3">
+   236→            <div className="flex items-center justify-between">
+   237→              <CardTitle className="text-base font-semibold">Recent Notifications</CardTitle>
+   238→              <Button variant="ghost" size="sm" className="text-emerald-600 hover:text-emerald-500" onClick={() => setCurrentView('notifications')}>
+   239→                View All <ArrowRight className="w-4 h-4 ml-1" />
+   240→              </Button>
+   241→            </div>
+   242→          </CardHeader>
+   243→          <CardContent>
+   244→            {recentNotifs.map((notif) => (
+   245→              <NotificationRow
+   246→                key={notif.id}
+   247→                title={notif.title}
+   248→                message={notif.message}
+   249→                time={formatRelativeTime(notif.createdAt)}
+   250→                isRead={notif.isRead}
+   251→              />
+   252→            ))}
+   253→          </CardContent>
+   254→        </Card>
+   255→      )}
+   256→    </div>
+   257→  )
+   258→}
+   259→
+   260→// --- Alumni Dashboard ---
+   261→function AlumniDashboard() {
+   262→  const currentUser = useAppStore((s) => s.currentUser)!
+   263→  const analytics = useAppStore((s) => s.analytics)
+   264→  const jobs = useAppStore((s) => s.jobs)
+   265→  const events = useAppStore((s) => s.events)
+   266→  const mentorships = useAppStore((s) => s.mentorships)
+   267→  const setCurrentView = useAppStore((s) => s.setCurrentView)
+   268→
+   269→  const totalUsers = analytics.find((a) => a.metric === 'total_users')?.value ?? 0
+   270→  const openJobs = analytics.find((a) => a.metric === 'open_jobs')?.value ?? jobs.length
+   271→  const activeMentorships = analytics.find((a) => a.metric === 'active_mentorships')?.value ?? 0
+   272→  const totalEvents = analytics.find((a) => a.metric === 'total_events')?.value ?? events.length
+   273→
+   274→  const pendingRequests = mentorships.filter((m) => m.status === 'PENDING' && m.mentorId === currentUser.id)
+   275→  const recentEvents = events.slice(0, 3)
+   276→
+   277→  return (
+   278→    <div className="space-y-6">
+   279→      {/* Welcome */}
+   280→      <div>
+   281→        <h1 className="text-2xl md:text-3xl font-bold">Welcome back, {currentUser.name.split(' ')[0]}!</h1>
+   282→        <p className="text-muted-foreground mt-1">Thank you for being part of the alumni community.</p>
+   283→      </div>
+   284→
+   285→      {/* Stats Row */}
+   286→      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+   287→        <StatCard icon={Users} label="Total Users" value={totalUsers || '-'} color="bg-emerald-500" />
+   288→        <StatCard icon={Briefcase} label="Open Jobs" value={openJobs || '-'} color="bg-teal-500" />
+   289→        <StatCard icon={Brain} label="Mentorships" value={activeMentorships || '-'} color="bg-cyan-500" />
+   290→        <StatCard icon={Calendar} label="Events" value={totalEvents || '-'} color="bg-emerald-600" />
+   291→      </div>
+   292→
+   293→      {/* Quick Actions */}
+   294→      <div>
+   295→        <h2 className="text-lg font-semibold mb-3">Quick Actions</h2>
+   296→        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+   297→          <QuickActionCard icon={Users} title="Offer Mentorship" description="Help students with career guidance" onClick={() => setCurrentView('mentorship')} color="bg-emerald-500" />
+   298→          <QuickActionCard icon={UserPlus} title="Post a Job" description="Share opportunities from your company" onClick={() => setCurrentView('post-job')} color="bg-teal-500" />
+   299→          <QuickActionCard icon={MessageSquare} title="Share Experience" description="Write about your career journey" onClick={() => setCurrentView('alumni-directory')} color="bg-cyan-500" />
+   300→        </div>
+   301→      </div>
+   302→
+   303→      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+   304→        {/* Pending Mentorship Requests */}
+   305→        <Card>
+   306→          <CardHeader className="pb-3">
+   307→            <div className="flex items-center justify-between">
+   308→              <CardTitle className="text-base font-semibold">Mentorship Requests</CardTitle>
+   309→              <Button variant="ghost" size="sm" className="text-emerald-600 hover:text-emerald-500" onClick={() => setCurrentView('mentorship')}>
+   310→                View All <ArrowRight className="w-4 h-4 ml-1" />
+   311→              </Button>
+   312→            </div>
+   313→          </CardHeader>
+   314→          <CardContent>
+   315→            {pendingRequests.length === 0 ? (
+   316→              <p className="text-sm text-muted-foreground py-4 text-center">No pending mentorship requests.</p>
+   317→            ) : (
+   318→              <div className="space-y-1">
+   319→                {pendingRequests.map((m) => (
+   320→                  <div key={m.id} className="flex items-center gap-3 py-3 border-b last:border-0">
+   321→                    <Avatar className="h-9 w-9">
+   322→                      <AvatarFallback className="bg-emerald-100 text-emerald-700 text-xs">
+   323→                        {(m.menteeName || '??').split(' ').map((n) => n[0]).join('').slice(0, 2)}
+   324→                      </AvatarFallback>
+   325→                    </Avatar>
+   326→                    <div className="min-w-0 flex-1">
+   327→                      <p className="text-sm font-medium truncate">{m.menteeName || 'Student'}</p>
+   328→                      <p className="text-xs text-muted-foreground truncate">{m.topic || 'General mentoring'} &middot; {formatDate(m.date)}</p>
+   329→                    </div>
+   330→                    <Badge className="bg-amber-100 text-amber-700 border-0 text-[10px]">Pending</Badge>
+   331→                  </div>
+   332→                ))}
+   333→              </div>
+   334→            )}
+   335→          </CardContent>
+   336→        </Card>
+   337→
+   338→        {/* Upcoming Events */}
+   339→        <Card>
+   340→          <CardHeader className="pb-3">
+   341→            <div className="flex items-center justify-between">
+   342→              <CardTitle className="text-base font-semibold">Upcoming Events</CardTitle>
+   343→              <Button variant="ghost" size="sm" className="text-emerald-600 hover:text-emerald-500" onClick={() => setCurrentView('events')}>
+   344→                View All <ArrowRight className="w-4 h-4 ml-1" />
+   345→              </Button>
+   346→            </div>
+   347→          </CardHeader>
+   348→          <CardContent>
+   349→            {recentEvents.length === 0 ? (
+   350→              <p className="text-sm text-muted-foreground py-4 text-center">No upcoming events.</p>
+   351→            ) : (
+   352→              <div className="space-y-1">
+   353→                {recentEvents.map((event) => (
+   354→                  <div key={event.id} className="flex items-start gap-3 py-3 border-b last:border-0">
+   355→                    <div className="w-10 h-10 rounded-lg bg-teal-100 dark:bg-teal-900/30 flex items-center justify-center flex-shrink-0">
+   356→                      <Calendar className="w-5 h-5 text-teal-600" />
+   357→                    </div>
+   358→                    <div className="min-w-0 flex-1">
+   359→                      <p className="text-sm font-medium truncate">{event.title}</p>
+   360→                      <p className="text-xs text-muted-foreground">{formatDate(event.date)}{event.time ? ` at ${event.time}` : ''}</p>
+   361→                    </div>
+   362→                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 flex-shrink-0">{event.type}</Badge>
+   363→                  </div>
+   364→                ))}
+   365→              </div>
+   366→            )}
+   367→          </CardContent>
+   368→        </Card>
+   369→      </div>
+   370→    </div>
+   371→  )
+   372→}
+   373→
+   374→// --- Recruiter Dashboard ---
+   375→function RecruiterDashboard() {
+   376→  const currentUser = useAppStore((s) => s.currentUser)!
+   377→  const analytics = useAppStore((s) => s.analytics)
+   378→  const jobs = useAppStore((s) => s.jobs)
+   379→  const applications = useAppStore((s) => s.applications)
+   380→  const setCurrentView = useAppStore((s) => s.setCurrentView)
+   381→
+   382→  const companyName = currentUser.company || currentUser.name
+   383→  const openJobs = jobs.filter((j) => j.status === 'OPEN').length
+   384→  const totalApplicants = applications.length
+   385→  const totalUsers = analytics.find((a) => a.metric === 'total_users')?.value ?? 0
+   386→  const totalEvents = analytics.find((a) => a.metric === 'total_events')?.value ?? 0
+   387→
+   388→  const recentApps = applications.slice(0, 4)
+   389→
+   390→  return (
+   391→    <div className="space-y-6">
+   392→      {/* Welcome */}
+   393→      <div>
+   394→        <h1 className="text-2xl md:text-3xl font-bold">Welcome, {companyName}!</h1>
+   395→        <p className="text-muted-foreground mt-1">Manage your job postings and track applicants.</p>
+   396→      </div>
+   397→
+   398→      {/* Stats Row */}
+   399→      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+   400→        <StatCard icon={Users} label="Total Users" value={totalUsers || '-'} color="bg-emerald-500" />
+   401→        <StatCard icon={Briefcase} label="Open Jobs" value={openJobs || '-'} color="bg-teal-500" />
+   402→        <StatCard icon={FileText} label="Applications" value={totalApplicants || '-'} color="bg-cyan-500" />
+   403→        <StatCard icon={Calendar} label="Events" value={totalEvents || '-'} color="bg-emerald-600" />
+   404→      </div>
+   405→
+   406→      {/* Quick Actions */}
+   407→      <div>
+   408→        <h2 className="text-lg font-semibold mb-3">Quick Actions</h2>
+   409→        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+   410→          <QuickActionCard icon={UserPlus} title="Post New Job" description="Create a new job listing" onClick={() => setCurrentView('post-job')} color="bg-emerald-500" />
+   411→          <QuickActionCard icon={FileText} title="View Applications" description="Review candidate applications" onClick={() => setCurrentView('applications')} color="bg-teal-500" />
+   412→          <QuickActionCard icon={Search} title="Search Candidates" description="Find candidates by skills" onClick={() => setCurrentView('candidate-search')} color="bg-cyan-500" />
+   413→        </div>
+   414→      </div>
+   415→
+   416→      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+   417→        {/* My Posted Jobs */}
+   418→        <Card>
+   419→          <CardHeader className="pb-3">
+   420→            <div className="flex items-center justify-between">
+   421→              <CardTitle className="text-base font-semibold">My Posted Jobs</CardTitle>
+   422→              <Button variant="ghost" size="sm" className="text-emerald-600 hover:text-emerald-500" onClick={() => setCurrentView('manage-jobs')}>
+   423→                Manage <ArrowRight className="w-4 h-4 ml-1" />
+   424→              </Button>
+   425→            </div>
+   426→          </CardHeader>
+   427→          <CardContent>
+   428→            {jobs.length === 0 ? (
+   429→              <p className="text-sm text-muted-foreground py-4 text-center">No jobs posted yet.</p>
+   430→            ) : (
+   431→              <div className="space-y-1 max-h-72 overflow-y-auto">
+   432→                {jobs.map((job) => (
+   433→                  <div key={job.id} className="flex items-center gap-3 py-3 border-b last:border-0">
+   434→                    <div className="w-10 h-10 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center flex-shrink-0">
+   435→                      <Briefcase className="w-5 h-5 text-emerald-600" />
+   436→                    </div>
+   437→                    <div className="min-w-0 flex-1">
+   438→                      <p className="text-sm font-medium truncate">{job.title}</p>
+   439→                      <p className="text-xs text-muted-foreground">{job.location} &middot; {job.type}</p>
+   440→                    </div>
+   441→                    <div className="flex flex-col items-end gap-1 flex-shrink-0">
+   442→                      <span className="text-xs font-medium">{job.applicantsCount} applicant{job.applicantsCount !== 1 ? 's' : ''}</span>
+   443→                      <Badge variant={job.status === 'OPEN' ? 'default' : 'secondary'} className={`text-[10px] px-1.5 py-0 ${job.status === 'OPEN' ? 'bg-emerald-600' : ''}`}>
+   444→                        {job.status}
+   445→                      </Badge>
+   446→                    </div>
+   447→                  </div>
+   448→                ))}
+   449→              </div>
+   450→            )}
+   451→          </CardContent>
+   452→        </Card>
+   453→
+   454→        {/* Recent Applications */}
+   455→        <Card>
+   456→          <CardHeader className="pb-3">
+   457→            <div className="flex items-center justify-between">
+   458→              <CardTitle className="text-base font-semibold">Recent Applications</CardTitle>
+   459→              <Button variant="ghost" size="sm" className="text-emerald-600 hover:text-emerald-500" onClick={() => setCurrentView('applications')}>
+   460→                View All <ArrowRight className="w-4 h-4 ml-1" />
+   461→              </Button>
+   462→            </div>
+   463→          </CardHeader>
+   464→          <CardContent>
+   465→            {recentApps.length === 0 ? (
+   466→              <p className="text-sm text-muted-foreground py-4 text-center">No applications received yet.</p>
+   467→            ) : (
+   468→              <div className="space-y-1">
+   469→                {recentApps.map((app) => (
+   470→                  <div key={app.id} className="flex items-center gap-3 py-3 border-b last:border-0">
+   471→                    <Avatar className="h-9 w-9">
+   472→                      <AvatarFallback className="bg-teal-100 text-teal-700 text-xs">
+   473→                        {(app.userName || '??').split(' ').map((n) => n[0]).join('').slice(0, 2)}
+   474→                      </AvatarFallback>
+   475→                    </Avatar>
+   476→                    <div className="min-w-0 flex-1">
+   477→                      <p className="text-sm font-medium truncate">{app.userName || 'Candidate'}</p>
+   478→                      <p className="text-xs text-muted-foreground truncate">{app.jobTitle || 'Unknown Job'}</p>
+   479→                    </div>
+   480→                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 flex-shrink-0">
+   481→                      {app.status}
+   482→                    </Badge>
+   483→                  </div>
+   484→                ))}
+   485→              </div>
+   486→            )}
+   487→          </CardContent>
+   488→        </Card>
+   489→      </div>
+   490→    </div>
+   491→  )
+   492→}
+   493→
+   494→// --- Admin / Placement Cell Dashboard ---
+   495→function AdminDashboard() {
+   496→  const currentUser = useAppStore((s) => s.currentUser)!
+   497→  const users = useAppStore((s) => s.users)
+   498→  const analytics = useAppStore((s) => s.analytics)
+   499→  const jobs = useAppStore((s) => s.jobs)
+   500→  const applications = useAppStore((s) => s.applications)
+   501→  const events = useAppStore((s) => s.events)
+   502→  const setCurrentView = useAppStore((s) => s.setCurrentView)
+   503→
+   504→  const totalUsers = analytics.find((a) => a.metric === 'total_users')?.value ?? users.length
+   505→  const totalJobs = analytics.find((a) => a.metric === 'open_jobs')?.value ?? jobs.length
+   506→  const totalApps = analytics.find((a) => a.metric === 'total_applications')?.value ?? applications.length
+   507→  const totalEvents = analytics.find((a) => a.metric === 'total_events')?.value ?? events.length
+   508→
+   509→  const recentUsers = users.slice(0, 5)
+   510→
+   511→  const roleLabel = currentUser.role === 'PLACEMENT_CELL' ? 'Placement Cell' : 'Admin'
+   512→
+   513→  return (
+   514→    <div className="space-y-6">
+   515→      {/* Welcome */}
+   516→      <div>
+   517→        <h1 className="text-2xl md:text-3xl font-bold">{roleLabel} Dashboard</h1>
+   518→        <p className="text-muted-foreground mt-1">Overview of the AlumniPortal platform activity.</p>
+   519→      </div>
+   520→
+   521→      {/* Stats Row */}
+   522→      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+   523→        <StatCard icon={Users} label="Total Users" value={totalUsers || 0} color="bg-emerald-500" />
+   524→        <StatCard icon={Briefcase} label="Jobs Posted" value={totalJobs || 0} color="bg-teal-500" />
+   525→        <StatCard icon={FileText} label="Applications" value={totalApps || 0} color="bg-cyan-500" />
+   526→        <StatCard icon={Calendar} label="Events" value={totalEvents || 0} color="bg-emerald-600" />
+   527→      </div>
+   528→
+   529→      {/* Quick Actions */}
+   530→      <div>
+   531→        <h2 className="text-lg font-semibold mb-3">Quick Actions</h2>
+   532→        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+   533→          {currentUser.role === 'ADMIN' && (
+   534→            <QuickActionCard icon={Shield} title="Manage Users" description="View, edit, and manage user accounts" onClick={() => setCurrentView('user-management')} color="bg-emerald-500" />
+   535→          )}
+   536→          <QuickActionCard icon={BarChart3} title="View Reports" description="Access detailed analytics and reports" onClick={() => setCurrentView('analytics')} color="bg-teal-500" />
+   537→          {currentUser.role === 'PLACEMENT_CELL' && (
+   538→            <>
+   539→              <QuickActionCard icon={Building} title="Alumni Directory" description="Browse the alumni network" onClick={() => setCurrentView('alumni-directory')} color="bg-cyan-500" />
+   540→              <QuickActionCard icon={Calendar} title="Manage Events" description="Create and manage events" onClick={() => setCurrentView('events')} color="bg-emerald-600" />
+   541→            </>
+   542→          )}
+   543→        </div>
+   544→      </div>
+   545→
+   546→      {/* Recent User Registrations */}
+   547→      <Card>
+   548→        <CardHeader className="pb-3">
+   549→          <div className="flex items-center justify-between">
+   550→            <CardTitle className="text-base font-semibold">Recent User Registrations</CardTitle>
+   551→            {currentUser.role === 'ADMIN' && (
+   552→              <Button variant="ghost" size="sm" className="text-emerald-600 hover:text-emerald-500" onClick={() => setCurrentView('user-management')}>
+   553→                View All <ArrowRight className="w-4 h-4 ml-1" />
+   554→              </Button>
+   555→            )}
+   556→          </div>
+   557→        </CardHeader>
+   558→        <CardContent>
+   559→          {recentUsers.length === 0 ? (
+   560→            <p className="text-sm text-muted-foreground py-4 text-center">No users registered yet.</p>
+   561→          ) : (
+   562→            <div className="overflow-x-auto">
+   563→              <table className="w-full text-sm">
+   564→                <thead>
+   565→                  <tr className="border-b text-left">
+   566→                    <th className="pb-2 font-medium text-muted-foreground">User</th>
+   567→                    <th className="pb-2 font-medium text-muted-foreground hidden sm:table-cell">Email</th>
+   568→                    <th className="pb-2 font-medium text-muted-foreground">Role</th>
+   569→                    <th className="pb-2 font-medium text-muted-foreground hidden md:table-cell">Joined</th>
+   570→                  </tr>
+   571→                </thead>
+   572→                <tbody>
+   573→                  {recentUsers.map((user) => (
+   574→                    <tr key={user.id} className="border-b last:border-0">
+   575→                      <td className="py-3">
+   576→                        <div className="flex items-center gap-2.5">
+   577→                          <Avatar className="h-8 w-8">
+   578→                            <AvatarFallback className="bg-emerald-100 text-emerald-700 text-xs font-semibold">
+   579→                              {user.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()}
+   580→                            </AvatarFallback>
+   581→                          </Avatar>
+   582→                          <span className="font-medium truncate max-w-[120px]">{user.name}</span>
+   583→                        </div>
+   584→                      </td>
+   585→                      <td className="py-3 text-muted-foreground hidden sm:table-cell">
+   586→                        <span className="truncate max-w-[180px] block">{user.email}</span>
+   587→                      </td>
+   588→                      <td className="py-3">
+   589→                        <Badge variant="outline" className="text-[10px] px-1.5 py-0">{user.role}</Badge>
+   590→                      </td>
+   591→                      <td className="py-3 text-muted-foreground hidden md:table-cell whitespace-nowrap">
+   592→                        {formatRelativeTime(user.createdAt)}
+   593→                      </td>
+   594→                    </tr>
+   595→                  ))}
+   596→                </tbody>
+   597→              </table>
+   598→            </div>
+   599→          )}
+   600→        </CardContent>
+   601→      </Card>
+   602→    </div>
+   603→  )
+   604→}
+   605→
+   606→// --- Main Dashboard View ---
+   607→export function DashboardView() {
+   608→  const currentUser = useAppStore((s) => s.currentUser)
+   609→
+   610→  if (!currentUser) return null
+   611→
+   612→  switch (currentUser.role) {
+   613→    case 'STUDENT':
+   614→      return <StudentDashboard />
+   615→    case 'ALUMNI':
+   616→      return <AlumniDashboard />
+   617→    case 'RECRUITER':
+   618→      return <RecruiterDashboard />
+   619→    case 'ADMIN':
+   620→    case 'PLACEMENT_CELL':
+   621→      return <AdminDashboard />
+   622→    default:
+   623→      return <StudentDashboard />
+   624→  }
+   625→}
+   626→

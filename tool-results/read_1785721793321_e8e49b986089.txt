@@ -1,0 +1,653 @@
+     1→   542→function ResumeBuilder({ userId }: { userId: string }) {
+     2→   543→  const { currentUser, updateUser, addToast, setLoading, setCurrentView } = useAppStore()
+     3→   544→  const [saving, setSaving] = useState(false)
+     4→   545→  const [reviewing, setReviewing] = useState(false)
+     5→   546→  const [skillInput, setSkillInput] = useState('')
+     6→   547→  const [skills, setSkills] = useState<string[]>([])
+     7→   548→  const [objective, setObjective] = useState('')
+     8→   549→  const [education, setEducation] = useState<ResumeSection>({
+     9→   550→    degree: '',
+    10→   551→    college: '',
+    11→   552→    year: '',
+    12→   553→    gpa: '',
+    13→   554→  })
+    14→   555→  const [experiences, setExperiences] = useState<ResumeExperience[]>([])
+    15→   556→  const [projects, setProjects] = useState<ResumeProject[]>([])
+    16→   557→  const [aiReview, setAiReview] = useState<{
+    17→   558→    score: number
+    18→   559→    sections: { name: string; score: number; feedback: string }[]
+    19→   560→    suggestions: string[]
+    20→   561→  } | null>(null)
+    21→   562→
+    22→   563→  // Auto-fill from profile
+    23→   564→  useEffect(() => {
+    24→   565→    if (currentUser) {
+    25→   566→      setEducation({
+    26→   567→        degree: currentUser.department || '',
+    27→   568→        college: '',
+    28→   569→        year: currentUser.graduationYear?.toString() || '',
+    29→   570→        gpa: currentUser.gpa?.toString() || '',
+    30→   571→      })
+    31→   572→      if (currentUser.skills) {
+    32→   573→        try {
+    33→   574→          const parsed = JSON.parse(currentUser.skills)
+    34→   575→          if (Array.isArray(parsed)) setSkills(parsed)
+    35→   576→        } catch {
+    36→   577→          setSkills(currentUser.skills.split(',').map(s => s.trim()).filter(Boolean))
+    37→   578→        }
+    38→   579→      }
+    39→   580→    }
+    40→   581→  }, [currentUser])
+    41→   582→
+    42→   583→  const addSkill = () => {
+    43→   584→    const trimmed = skillInput.trim()
+    44→   585→    if (trimmed && !skills.includes(trimmed)) {
+    45→   586→      setSkills(prev => [...prev, trimmed])
+    46→   587→      setSkillInput('')
+    47→   588→    }
+    48→   589→  }
+    49→   590→
+    50→   591→  const removeSkill = (skill: string) => {
+    51→   592→    setSkills(prev => prev.filter(s => s !== skill))
+    52→   593→  }
+    53→   594→
+    54→   595→  const addExperience = () => {
+    55→   596→    setExperiences(prev => [...prev, { company: '', role: '', duration: '', description: '' }])
+    56→   597→  }
+    57→   598→
+    58→   599→  const updateExperience = (idx: number, field: keyof ResumeExperience, value: string) => {
+    59→   600→    setExperiences(prev => prev.map((exp, i) => (i === idx ? { ...exp, [field]: value } : exp)))
+    60→   601→  }
+    61→   602→
+    62→   603→  const removeExperience = (idx: number) => {
+    63→   604→    setExperiences(prev => prev.filter((_, i) => i !== idx))
+    64→   605→  }
+    65→   606→
+    66→   607→  const addProject = () => {
+    67→   608→    setProjects(prev => [...prev, { title: '', tech: '', description: '', link: '' }])
+    68→   609→  }
+    69→   610→
+    70→   611→  const updateProject = (idx: number, field: keyof ResumeProject, value: string) => {
+    71→   612→    setProjects(prev => prev.map((proj, i) => (i === idx ? { ...proj, [field]: value } : proj)))
+    72→   613→  }
+    73→   614→
+    74→   615→  const removeProject = (idx: number) => {
+    75→   616→    setProjects(prev => prev.filter((_, i) => i !== idx))
+    76→   617→  }
+    77→   618→
+    78→   619→  const handleAIReview = async () => {
+    79→   620→    setReviewing(true)
+    80→   621→    try {
+    81→   622→      const res = await fetch('/api/ai', {
+    82→   623→        method: 'POST',
+    83→   624→        headers: { 'Content-Type': 'application/json' },
+    84→   625→        body: JSON.stringify({
+    85→   626→          action: 'resume-review',
+    86→   627→          data: {
+    87→   628→            skills,
+    88→   629→            experience: experiences,
+    89→   630→            education,
+    90→   631→            projects,
+    91→   632→            objective,
+    92→   633→            targetRole: currentUser?.designation || 'Software Engineer',
+    93→   634→          },
+    94→   635→        }),
+    95→   636→      })
+    96→   637→      if (!res.ok) throw new Error('AI review failed')
+    97→   638→      const result = await res.json()
+    98→   639→      setAiReview(result)
+    99→   640→      addToast('Resume review completed', 'success')
+   100→   641→    } catch {
+   101→   642→      addToast('Failed to get AI review', 'error')
+   102→   643→    } finally {
+   103→   644→      setReviewing(false)
+   104→   645→    }
+   105→   646→  }
+   106→   647→
+   107→   648→  const handleSave = async () => {
+   108→   649→    setSaving(true)
+   109→   650→    setLoading(true)
+   110→   651→    try {
+   111→   652→      const skillsStr = skills.length > 0 ? JSON.stringify(skills) : null
+   112→   653→      const body: Record<string, unknown> = {
+   113→   654→        userId,
+   114→   655→        skills: skillsStr,
+   115→   656→        department: education.degree || null,
+   116→   657→        graduationYear: education.year ? parseInt(education.year) : null,
+   117→   658→        gpa: education.gpa ? parseFloat(education.gpa) : null,
+   118→   659→      }
+   119→   660→
+   120→   661→      const res = await fetch('/api/auth', {
+   121→   662→        method: 'PUT',
+   122→   663→        headers: { 'Content-Type': 'application/json' },
+   123→   664→        body: JSON.stringify(body),
+   124→   665→      })
+   125→   666→
+   126→   667→      if (!res.ok) throw new Error('Failed to save resume data')
+   127→   668→      updateUser(userId, body)
+   128→   669→      addToast('Resume data saved to profile', 'success')
+   129→   670→    } catch {
+   130→   671→      addToast('Failed to save resume data', 'error')
+   131→   672→    } finally {
+   132→   673→      setSaving(false)
+   133→   674→      setLoading(false)
+   134→   675→    }
+   135→   676→  }
+   136→   677→
+   137→   678→  const handleDownloadPDF = () => {
+   138→   679→    window.print()
+   139→   680→  }
+   140→   681→
+   141→   682→  const getInitials = () => {
+   142→   683→    return currentUser?.name
+   143→   684→      ?.split(' ')
+   144→   685→      .map(n => n[0])
+   145→   686→      .join('')
+   146→   687→      .toUpperCase()
+   147→   688→      .slice(0, 2) || 'U'
+   148→   689→  }
+   149→   690→
+   150→   691→  const getScoreColor = (score: number) => {
+   151→   692→    if (score >= 80) return 'text-emerald-500'
+   152→   693→    if (score >= 60) return 'text-amber-500'
+   153→   694→    return 'text-red-500'
+   154→   695→  }
+   155→   696→
+   156→   697→  return (
+   157→   698→    <div className="space-y-4">
+   158→   699→      {/* Header Actions */}
+   159→   700→      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+   160→   701→        <div>
+   161→   702→          <h2 className="text-xl font-semibold">AI Resume Builder</h2>
+   162→   703→          <p className="text-sm text-muted-foreground">Build and optimize your resume with AI assistance</p>
+   163→   704→        </div>
+   164→   705→        <div className="flex gap-2 flex-wrap">
+   165→   706→          <Button variant="outline" size="sm" onClick={() => setCurrentView('profile')}>
+   166→   707→            Back to Profile
+   167→   708→          </Button>
+   168→   709→          <Button variant="outline" size="sm" onClick={handleDownloadPDF}>
+   169→   710→            <Download className="h-4 w-4 mr-1" />
+   170→   711→            Download PDF
+   171→   712→          </Button>
+   172→   713→          <Button size="sm" onClick={handleSave} disabled={saving}>
+   173→   714→            {saving ? 'Saving...' : <Save className="h-4 w-4 mr-1" />}
+   174→   715→            Save to Profile
+   175→   716→          </Button>
+   176→   717→        </div>
+   177→   718→      </div>
+   178→   719→
+   179→   720→      <div className="grid gap-6 lg:grid-cols-2">
+   180→   721→        {/* Left: Form Sections */}
+   181→   722→        <div className="space-y-4">
+   182→   723→          <Accordion type="multiple" defaultValue={['personal', 'skills', 'education', 'experience', 'projects']} className="w-full">
+   183→   724→            {/* Personal Info */}
+   184→   725→            <AccordionItem value="personal">
+   185→   726→              <AccordionTrigger>Personal Info <Badge variant="secondary" className="ml-2 text-xs">Auto-filled</Badge></AccordionTrigger>
+   186→   727→              <AccordionContent>
+   187→   728→                <div className="grid grid-cols-2 gap-3 pt-2">
+   188→   729→                  <div className="space-y-1">
+   189→   730→                    <Label className="text-xs">Name</Label>
+   190→   731→                    <Input value={currentUser?.name || ''} disabled />
+   191→   732→                  </div>
+   192→   733→                  <div className="space-y-1">
+   193→   734→                    <Label className="text-xs">Email</Label>
+   194→   735→                    <Input value={currentUser?.email || ''} disabled />
+   195→   736→                  </div>
+   196→   737→                  <div className="space-y-1">
+   197→   738→                    <Label className="text-xs">Phone</Label>
+   198→   739→                    <Input value={currentUser?.phone || ''} disabled />
+   199→   740→                  </div>
+   200→   741→                  <div className="space-y-1">
+   201→   742→                    <Label className="text-xs">Location</Label>
+   202→   743→                    <Input value={currentUser?.location || ''} disabled />
+   203→   744→                  </div>
+   204→   745→                </div>
+   205→   746→              </AccordionContent>
+   206→   747→            </AccordionItem>
+   207→   748→
+   208→   749→            {/* Objective */}
+   209→   750→            <AccordionItem value="objective">
+   210→   751→              <AccordionTrigger>Objective / Summary</AccordionTrigger>
+   211→   752→              <AccordionContent>
+   212→   753→                <Textarea
+   213→   754→                  value={objective}
+   214→   755→                  onChange={e => setObjective(e.target.value)}
+   215→   756→                  placeholder="A motivated Computer Science student seeking a software engineering internship..."
+   216→   757→                  rows={3}
+   217→   758→                  className="mt-1"
+   218→   759→                />
+   219→   760→              </AccordionContent>
+   220→   761→            </AccordionItem>
+   221→   762→
+   222→   763→            {/* Skills */}
+   223→   764→            <AccordionItem value="skills">
+   224→   765→              <AccordionTrigger>Skills <Badge variant="secondary" className="ml-2 text-xs">{skills.length} added</Badge></AccordionTrigger>
+   225→   766→              <AccordionContent>
+   226→   767→                <div className="flex gap-2 mt-1">
+   227→   768→                  <Input
+   228→   769→                    value={skillInput}
+   229→   770→                    onChange={e => setSkillInput(e.target.value)}
+   230→   771→                    onKeyDown={e => {
+   231→   772→                      if (e.key === 'Enter') {
+   232→   773→                        e.preventDefault()
+   233→   774→                        addSkill()
+   234→   775→                      }
+   235→   776→                    }}
+   236→   777→                    placeholder="Type a skill and press Enter"
+   237→   778→                    className="flex-1"
+   238→   779→                  />
+   239→   780→                  <Button size="sm" onClick={addSkill} type="button">
+   240→   781→                    <Plus className="h-4 w-4" />
+   241→   782→                  </Button>
+   242→   783→                </div>
+   243→   784→                <div className="flex flex-wrap gap-2 mt-3">
+   244→   785→                  {skills.map(skill => (
+   245→   786→                    <Badge key={skill} variant="secondary" className="gap-1 pr-1">
+   246→   787→                      {skill}
+   247→   788→                      <button
+   248→   789→                        onClick={() => removeSkill(skill)}
+   249→   790→                        className="ml-1 rounded-full hover:bg-muted-foreground/20 p-0.5"
+   250→   791→                        aria-label={`Remove ${skill}`}
+   251→   792→                      >
+   252→   793→                        <X className="h-3 w-3" />
+   253→   794→                      </button>
+   254→   795→                    </Badge>
+   255→   796→                  ))}
+   256→   797→                  {skills.length === 0 && (
+   257→   798→                    <p className="text-sm text-muted-foreground">No skills added yet. Start typing to add skills.</p>
+   258→   799→                  )}
+   259→   800→                </div>
+   260→   801→              </AccordionContent>
+   261→   802→            </AccordionItem>
+   262→   803→
+   263→   804→            {/* Education */}
+   264→   805→            <AccordionItem value="education">
+   265→   806→              <AccordionTrigger>Education</AccordionTrigger>
+   266→   807→              <AccordionContent>
+   267→   808→                <div className="grid gap-3 pt-1">
+   268→   809→                  <div className="space-y-1">
+   269→   810→                    <Label className="text-xs">Degree / Department</Label>
+   270→   811→                    <Input
+   271→   812→                      value={education.degree}
+   272→   813→                      onChange={e => setEducation(prev => ({ ...prev, degree: e.target.value }))}
+   273→   814→                      placeholder="B.Tech in Computer Science"
+   274→   815→                    />
+   275→   816→                  </div>
+   276→   817→                  <div className="space-y-1">
+   277→   818→                    <Label className="text-xs">College / University</Label>
+   278→   819→                    <Input
+   279→   820→                      value={education.college}
+   280→   821→                      onChange={e => setEducation(prev => ({ ...prev, college: e.target.value }))}
+   281→   822→                      placeholder="University Name"
+   282→   823→                    />
+   283→   824→                  </div>
+   284→   825→                  <div className="grid grid-cols-2 gap-3">
+   285→   826→                    <div className="space-y-1">
+   286→   827→                      <Label className="text-xs">Year</Label>
+   287→   828→                      <Input
+   288→   829→                        value={education.year}
+   289→   830→                        onChange={e => setEducation(prev => ({ ...prev, year: e.target.value }))}
+   290→   831→                        placeholder="2024"
+   291→   832→                      />
+   292→   833→                    </div>
+   293→   834→                    <div className="space-y-1">
+   294→   835→                      <Label className="text-xs">GPA</Label>
+   295→   836→                      <Input
+   296→   837→                        value={education.gpa}
+   297→   838→                        onChange={e => setEducation(prev => ({ ...prev, gpa: e.target.value }))}
+   298→   839→                        placeholder="3.8"
+   299→   840→                      />
+   300→   841→                    </div>
+   301→   842→                  </div>
+   302→   843→                </div>
+   303→   844→              </AccordionContent>
+   304→   845→            </AccordionItem>
+   305→   846→
+   306→   847→            {/* Experience */}
+   307→   848→            <AccordionItem value="experience">
+   308→   849→              <AccordionTrigger>Experience <Badge variant="secondary" className="ml-2 text-xs">{experiences.length}</Badge></AccordionTrigger>
+   309→   850→              <AccordionContent>
+   310→   851→                <div className="space-y-4 pt-1">
+   311→   852→                  {experiences.map((exp, idx) => (
+   312→   853→                    <Card key={idx} className="p-3">
+   313→   854→                      <div className="flex justify-between items-start mb-2">
+   314→   855→                        <span className="text-xs font-medium text-muted-foreground">Experience #{idx + 1}</span>
+   315→   856→                        <Button variant="ghost" size="sm" onClick={() => removeExperience(idx)} className="h-6 w-6 p-0 text-destructive">
+   316→   857→                          <X className="h-3 w-3" />
+   317→   858→                        </Button>
+   318→   859→                      </div>
+   319→   860→                      <div className="grid gap-2">
+   320→   861→                        <div className="grid grid-cols-2 gap-2">
+   321→   862→                          <Input
+   322→   863→                            value={exp.company}
+   323→   864→                            onChange={e => updateExperience(idx, 'company', e.target.value)}
+   324→   865→                            placeholder="Company"
+   325→   866→                            className="text-sm"
+   326→   867→                          />
+   327→   868→                          <Input
+   328→   869→                            value={exp.role}
+   329→   870→                            onChange={e => updateExperience(idx, 'role', e.target.value)}
+   330→   871→                            placeholder="Role"
+   331→   872→                            className="text-sm"
+   332→   873→                          />
+   333→   874→                        </div>
+   334→   875→                        <Input
+   335→   876→                          value={exp.duration}
+   336→   877→                          onChange={e => updateExperience(idx, 'duration', e.target.value)}
+   337→   878→                          placeholder="Duration (e.g., May 2023 - Aug 2023)"
+   338→   879→                          className="text-sm"
+   339→   880→                        />
+   340→   881→                        <Textarea
+   341→   882→                          value={exp.description}
+   342→   883→                          onChange={e => updateExperience(idx, 'description', e.target.value)}
+   343→   884→                          placeholder="Key responsibilities and achievements..."
+   344→   885→                          rows={2}
+   345→   886→                          className="text-sm"
+   346→   887→                        />
+   347→   888→                      </div>
+   348→   889→                    </Card>
+   349→   890→                  ))}
+   350→   891→                  <Button variant="outline" size="sm" onClick={addExperience} className="w-full">
+   351→   892→                    <Plus className="h-4 w-4 mr-1" />
+   352→   893→                    Add Experience
+   353→   894→                  </Button>
+   354→   895→                </div>
+   355→   896→              </AccordionContent>
+   356→   897→            </AccordionItem>
+   357→   898→
+   358→   899→            {/* Projects */}
+   359→   900→            <AccordionItem value="projects">
+   360→   901→              <AccordionTrigger>Projects <Badge variant="secondary" className="ml-2 text-xs">{projects.length}</Badge></AccordionTrigger>
+   361→   902→              <AccordionContent>
+   362→   903→                <div className="space-y-4 pt-1">
+   363→   904→                  {projects.map((proj, idx) => (
+   364→   905→                    <Card key={idx} className="p-3">
+   365→   906→                      <div className="flex justify-between items-start mb-2">
+   366→   907→                        <span className="text-xs font-medium text-muted-foreground">Project #{idx + 1}</span>
+   367→   908→                        <Button variant="ghost" size="sm" onClick={() => removeProject(idx)} className="h-6 w-6 p-0 text-destructive">
+   368→   909→                          <X className="h-3 w-3" />
+   369→   910→                        </Button>
+   370→   911→                      </div>
+   371→   912→                      <div className="grid gap-2">
+   372→   913→                        <Input
+   373→   914→                          value={proj.title}
+   374→   915→                          onChange={e => updateProject(idx, 'title', e.target.value)}
+   375→   916→                          placeholder="Project title"
+   376→   917→                          className="text-sm"
+   377→   918→                        />
+   378→   919→                        <Input
+   379→   920→                          value={proj.tech}
+   380→   921→                          onChange={e => updateProject(idx, 'tech', e.target.value)}
+   381→   922→                          placeholder="Technologies used (comma-separated)"
+   382→   923→                          className="text-sm"
+   383→   924→                        />
+   384→   925→                        <Textarea
+   385→   926→                          value={proj.description}
+   386→   927→                          onChange={e => updateProject(idx, 'description', e.target.value)}
+   387→   928→                          placeholder="Brief description of the project..."
+   388→   929→                          rows={2}
+   389→   930→                          className="text-sm"
+   390→   931→                        />
+   391→   932→                        <Input
+   392→   933→                          value={proj.link}
+   393→   934→                          onChange={e => updateProject(idx, 'link', e.target.value)}
+   394→   935→                          placeholder="Project link (GitHub, live URL)"
+   395→   936→                          className="text-sm"
+   396→   937→                        />
+   397→   938→                      </div>
+   398→   939→                    </Card>
+   399→   940→                  ))}
+   400→   941→                  <Button variant="outline" size="sm" onClick={addProject} className="w-full">
+   401→   942→                    <Plus className="h-4 w-4 mr-1" />
+   402→   943→                    Add Project
+   403→   944→                  </Button>
+   404→   945→                </div>
+   405→   946→              </AccordionContent>
+   406→   947→            </AccordionItem>
+   407→   948→          </Accordion>
+   408→   949→
+   409→   950→          {/* AI Review Button */}
+   410→   951→          <Button
+   411→   952→            onClick={handleAIReview}
+   412→   953→            disabled={reviewing || (skills.length === 0 && !objective)}
+   413→   954→            className="w-full"
+   414→   955→            size="lg"
+   415→   956→          >
+   416→   957→            {reviewing ? (
+   417→   958→              <div className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+   418→   959→            ) : (
+   419→   960→              <Sparkles className="h-4 w-4 mr-2" />
+   420→   961→            )}
+   421→   962→            {reviewing ? 'Analyzing Resume...' : 'AI Review Resume'}
+   422→   963→          </Button>
+   423→   964→
+   424→   965→          {/* AI Review Results */}
+   425→   966→          {aiReview && (
+   426→   967→            <Card className="border-primary/20 bg-primary/5">
+   427→   968→              <CardHeader className="pb-3">
+   428→   969→                <CardTitle className="text-base flex items-center gap-2">
+   429→   970→                  <Star className="h-5 w-5 text-primary" />
+   430→   971→                  AI Resume Score
+   431→   972→                </CardTitle>
+   432→   973→              </CardHeader>
+   433→   974→              <CardContent className="space-y-4">
+   434→   975→                {/* Circular Score */}
+   435→   976→                <div className="flex items-center gap-6">
+   436→   977→                  <div className="relative w-24 h-24 flex-shrink-0">
+   437→   978→                    <svg className="w-24 h-24 -rotate-90" viewBox="0 0 100 100">
+   438→   979→                      <circle cx="50" cy="50" r="42" fill="none" stroke="currentColor" strokeWidth="6" className="text-muted/30" />
+   439→   980→                      <circle
+   440→   981→                        cx="50" cy="50" r="42" fill="none" stroke="currentColor" strokeWidth="6"
+   441→   982→                        className={getScoreColor(aiReview.score)}
+   442→   983→                        strokeDasharray={`${(aiReview.score / 100) * 264} 264`}
+   443→   984→                        strokeLinecap="round"
+   444→   985→                      />
+   445→   986→                    </svg>
+   446→   987→                    <div className="absolute inset-0 flex items-center justify-center">
+   447→   988→                      <span className={`text-2xl font-bold ${getScoreColor(aiReview.score)}`}>{aiReview.score}</span>
+   448→   989→                    </div>
+   449→   990→                  </div>
+   450→   991→                  <div className="space-y-1 text-sm">
+   451→   992→                    <p className="font-medium">Overall Assessment</p>
+   452→   993→                    <p className="text-muted-foreground">
+   453→   994→                      {aiReview.score >= 80 ? 'Excellent resume! Minor improvements possible.' : aiReview.score >= 60 ? 'Good resume with room for improvement.' : 'Resume needs significant improvements.'}
+   454→   995→                    </p>
+   455→   996→                  </div>
+   456→   997→                </div>
+   457→   998→
+   458→   999→                {/* Section Scores */}
+   459→  1000→                {aiReview.sections && aiReview.sections.length > 0 && (
+   460→  1001→                  <div className="space-y-3">
+   461→  1002→                    <p className="text-sm font-medium">Section Scores</p>
+   462→  1003→                    {aiReview.sections.map((section, idx) => (
+   463→  1004→                      <div key={idx} className="space-y-1">
+   464→  1005→                        <div className="flex justify-between text-sm">
+   465→  1006→                          <span>{section.name}</span>
+   466→  1007→                          <span className={getScoreColor(section.score)}>{section.score}/100</span>
+   467→  1008→                        </div>
+   468→  1009→                        <Progress value={section.score} className="h-2" />
+   469→  1010→                        {section.feedback && <p className="text-xs text-muted-foreground">{section.feedback}</p>}
+   470→  1011→                      </div>
+   471→  1012→                    ))}
+   472→  1013→                  </div>
+   473→  1014→                )}
+   474→  1015→
+   475→  1016→                {/* Suggestions */}
+   476→  1017→                {aiReview.suggestions && aiReview.suggestions.length > 0 && (
+   477→  1018→                  <div className="space-y-2">
+   478→  1019→                    <p className="text-sm font-medium flex items-center gap-1">
+   479→  1020→                      <Target className="h-4 w-4" />
+   480→  1021→                      Suggestions
+   481→  1022→                    </p>
+   482→  1023→                    <ul className="space-y-1.5">
+   483→  1024→                      {aiReview.suggestions.map((suggestion, idx) => (
+   484→  1025→                        <li key={idx} className="text-sm text-muted-foreground flex items-start gap-2">
+   485→  1026→                          <AlertTriangle className="h-3.5 w-3.5 mt-0.5 text-amber-500 flex-shrink-0" />
+   486→  1027→                          {suggestion}
+   487→  1028→                        </li>
+   488→  1029→                      ))}
+   489→  1030→                    </ul>
+   490→  1031→                  </div>
+   491→  1032→                )}
+   492→  1033→              </CardContent>
+   493→  1034→            </Card>
+   494→  1035→          )}
+   495→  1036→        </div>
+   496→  1037→
+   497→  1038→        {/* Right: Live Resume Preview */}
+   498→  1039→        <div className="hidden lg:block">
+   499→  1040→          <div className="sticky top-6">
+   500→  1041→            <Card className="overflow-hidden print:shadow-none print:border-none">
+   501→  1042→              <div className="p-1 bg-muted text-center">
+   502→  1043→                <span className="text-xs text-muted-foreground font-medium">Live Preview</span>
+   503→  1044→              </div>
+   504→  1045→              <CardContent className="p-6 print:p-8 bg-white text-black" id="resume-preview">
+   505→  1046→                {/* Resume Header */}
+   506→  1047→                <div className="text-center border-b border-gray-300 pb-4 mb-4">
+   507→  1048→                  <h1 className="text-2xl font-bold">{currentUser?.name || 'Your Name'}</h1>
+   508→  1049→                  <p className="text-sm text-gray-600 mt-1">
+   509→  1050→                    {[currentUser?.email, currentUser?.phone, currentUser?.location].filter(Boolean).join(' | ')}
+   510→  1051→                  </p>
+   511→  1052→                  {currentUser?.linkedinUrl && (
+   512→  1053→                    <p className="text-sm text-blue-600 mt-1">{currentUser.linkedinUrl}</p>
+   513→  1054→                  )}
+   514→  1055→                </div>
+   515→  1056→
+   516→  1057→                {/* Objective */}
+   517→  1058→                {objective && (
+   518→  1059→                  <div className="mb-4">
+   519→  1060→                    <h2 className="text-sm font-bold uppercase tracking-wider border-b border-gray-200 pb-1 mb-2">Objective</h2>
+   520→  1061→                    <p className="text-sm text-gray-700">{objective}</p>
+   521→  1062→                  </div>
+   522→  1063→                )}
+   523→  1064→
+   524→  1065→                {/* Education */}
+   525→  1066→                {(education.degree || education.college) && (
+   526→  1067→                  <div className="mb-4">
+   527→  1068→                    <h2 className="text-sm font-bold uppercase tracking-wider border-b border-gray-200 pb-1 mb-2">Education</h2>
+   528→  1069→                    <div className="text-sm">
+   529→  1070→                      <p className="font-medium">{education.degree}</p>
+   530→  1071→                      {education.college && <p className="text-gray-600">{education.college}</p>}
+   531→  1072→                      <p className="text-gray-500">
+   532→  1073→                        {[education.year, education.gpa ? `GPA: ${education.gpa}` : ''].filter(Boolean).join(' | ')}
+   533→  1074→                      </p>
+   534→  1075→                    </div>
+   535→  1076→                  </div>
+   536→  1077→                )}
+   537→  1078→
+   538→  1079→                {/* Skills */}
+   539→  1080→                {skills.length > 0 && (
+   540→  1081→                  <div className="mb-4">
+   541→  1082→                    <h2 className="text-sm font-bold uppercase tracking-wider border-b border-gray-200 pb-1 mb-2">Skills</h2>
+   542→  1083→                    <p className="text-sm text-gray-700">{skills.join(' • ')}</p>
+   543→  1084→                  </div>
+   544→  1085→                )}
+   545→  1086→
+   546→  1087→                {/* Experience */}
+   547→  1088→                {experiences.length > 0 && (
+   548→  1089→                  <div className="mb-4">
+   549→  1090→                    <h2 className="text-sm font-bold uppercase tracking-wider border-b border-gray-200 pb-1 mb-2">Experience</h2>
+   550→  1091→                    <div className="space-y-3">
+   551→  1092→                      {experiences.map((exp, idx) => (
+   552→  1093→                        <div key={idx} className="text-sm">
+   553→  1094→                          <div className="flex justify-between">
+   554→  1095→                            <p className="font-medium">{exp.role}{exp.company ? ` — ${exp.company}` : ''}</p>
+   555→  1096→                            <p className="text-gray-500 text-xs">{exp.duration}</p>
+   556→  1097→                          </div>
+   557→  1098→                          {exp.description && <p className="text-gray-600 mt-1">{exp.description}</p>}
+   558→  1099→                        </div>
+   559→  1100→                      ))}
+   560→  1101→                    </div>
+   561→  1102→                  </div>
+   562→  1103→                )}
+   563→  1104→
+   564→  1105→                {/* Projects */}
+   565→  1106→                {projects.length > 0 && (
+   566→  1107→                  <div className="mb-4">
+   567→  1108→                    <h2 className="text-sm font-bold uppercase tracking-wider border-b border-gray-200 pb-1 mb-2">Projects</h2>
+   568→  1109→                    <div className="space-y-3">
+   569→  1110→                      {projects.map((proj, idx) => (
+   570→  1111→                        <div key={idx} className="text-sm">
+   571→  1112→                          <div className="flex justify-between items-start">
+   572→  1113→                            <p className="font-medium">{proj.title}</p>
+   573→  1114→                            {proj.link && (
+   574→  1115→                              <span className="text-xs text-blue-600">{proj.link}</span>
+   575→  1116→                            )}
+   576→  1117→                          </div>
+   577→  1118→                          {proj.tech && <p className="text-gray-500 text-xs">{proj.tech}</p>}
+   578→  1119→                          {proj.description && <p className="text-gray-600 mt-1">{proj.description}</p>}
+   579→  1120→                        </div>
+   580→  1121→                      ))}
+   581→  1122→                    </div>
+   582→  1123→                  </div>
+   583→  1124→                )}
+   584→  1125→
+   585→  1126→                {/* Empty State */}
+   586→  1127→                {!objective && !education.degree && skills.length === 0 && experiences.length === 0 && projects.length === 0 && (
+   587→  1128→                  <div className="text-center py-12 text-gray-400">
+   588→  1129→                    <FileText className="h-12 w-12 mx-auto mb-3 opacity-50" />
+   589→  1130→                    <p className="text-sm">Fill in the sections on the left to see your resume preview here.</p>
+   590→  1131→                  </div>
+   591→  1132→                )}
+   592→  1133→              </CardContent>
+   593→  1134→            </Card>
+   594→  1135→          </div>
+   595→  1136→        </div>
+   596→  1137→      </div>
+   597→  1138→    </div>
+   598→  1139→  )
+   599→  1140→}
+   600→  1141→
+   601→  1142→// ============================================================
+   602→  1143→// Main Export
+   603→  1144→// ============================================================
+   604→  1145→
+   605→  1146→interface ProfileViewProps {
+   606→  1147→  view: 'profile' | 'resume-builder'
+   607→  1148→}
+   608→  1149→
+   609→  1150→export function ProfileView({ view }: ProfileViewProps) {
+   610→  1151→  const { currentUser, isLoading } = useAppStore()
+   611→  1152→
+   612→  1153→  if (isLoading || !currentUser) {
+   613→  1154→    return (
+   614→  1155→      <div className="space-y-6 p-6">
+   615→  1156→        <Skeleton className="h-8 w-48" />
+   616→  1157→        <div className="flex justify-center">
+   617→  1158→          <Skeleton className="h-24 w-24 rounded-full" />
+   618→  1159→        </div>
+   619→  1160→        <div className="grid gap-4 md:grid-cols-2">
+   620→  1161→          {Array.from({ length: 6 }).map((_, i) => (
+   621→  1162→            <Skeleton key={i} className="h-10 w-full" />
+   622→  1163→          ))}
+   623→  1164→        </div>
+   624→  1165→      </div>
+   625→  1166→    )
+   626→  1167→  }
+   627→  1168→
+   628→  1169→  if (view === 'resume-builder') {
+   629→  1170→    if (currentUser.role !== 'STUDENT') {
+   630→  1171→      return (
+   631→  1172→        <div className="flex flex-col items-center justify-center py-20 text-center">
+   632→  1173→          <FileText className="h-16 w-16 text-muted-foreground/30 mb-4" />
+   633→  1174→          <h2 className="text-lg font-semibold">Resume Builder</h2>
+   634→  1175→          <p className="text-sm text-muted-foreground mt-1 max-w-md">
+   635→  1176→            The resume builder is available for students only. Switch to a student account to access this feature.
+   636→  1177→          </p>
+   637→  1178→        </div>
+   638→  1179→      )
+   639→  1180→    }
+   640→  1181→    return <ResumeBuilder userId={currentUser.id} />
+   641→  1182→  }
+   642→  1183→
+   643→  1184→  return (
+   644→  1185→    <div className="p-6 max-w-4xl mx-auto">
+   645→  1186→      <div className="mb-6">
+   646→  1187→        <h1 className="text-2xl font-bold">My Profile</h1>
+   647→  1188→        <p className="text-muted-foreground text-sm mt-1">Manage your personal information and preferences</p>
+   648→  1189→      </div>
+   649→  1190→      <ProfileForm userId={currentUser.id} />
+   650→  1191→    </div>
+   651→  1192→  )
+   652→  1193→}
+   653→  1194→

@@ -614,7 +614,7 @@ Feel free to ask me anything about your career development!`,
         </header>
 
         {/* Messages Area */}
-        <ScrollArea className="flex-1">
+        <div className="flex-1 overflow-y-auto min-h-0">
           <div className="max-w-3xl mx-auto px-4 py-4 space-y-4">
             {messages.map(msg => (
               <div
@@ -674,7 +674,7 @@ Feel free to ask me anything about your career development!`,
 
             <div ref={chatEndRef} />
           </div>
-        </ScrollArea>
+        </div>
 
         {/* Quick Actions & Input */}
         <div className="border-t bg-background">

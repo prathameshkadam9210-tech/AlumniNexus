@@ -781,7 +781,17 @@ export function PaymentsView() {
   const [cardName, setCardName] = useState('')
   const [processing, setProcessing] = useState(false)
 
+  // Donation state
+  const [donateDialogOpen, setDonateDialogOpen] = useState(false)
+  const [donateAmount, setDonateAmount] = useState('')
+  const [donatePurpose, setDonatePurpose] = useState('general')
+  const [donateCustomAmount, setDonateCustomAmount] = useState('')
+  const [donateMessage, setDonateMessage] = useState('')
+  const [donateProcessing, setDonateProcessing] = useState(false)
+
   const isAdmin = currentUser?.role === 'ADMIN'
+  const isAlumni = currentUser?.role === 'ALUMNI'
+  const isStudent = currentUser?.role === 'STUDENT'
 
   useEffect(() => {
     const url = isAdmin ? '/api/payments' : `/api/payments?userId=${currentUser?.id}`
@@ -899,6 +909,59 @@ export function PaymentsView() {
         </Card>
       </div>
 
+      {/* Donate Now Section - for Alumni & Students */}
+      {(isAlumni || isStudent) && (
+        <Card className="border-dashed border-2 border-emerald-300 dark:border-emerald-700 bg-gradient-to-br from-emerald-50/50 to-teal-50/50 dark:from-emerald-950/20 dark:to-teal-950/20">
+          <CardContent className="p-6">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className="p-3 rounded-xl bg-emerald-100 dark:bg-emerald-900/40">
+                  <Heart className="w-7 h-7 text-emerald-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-emerald-800 dark:text-emerald-300">Support JJMCOE Students</h3>
+                  <p className="text-sm text-muted-foreground mt-0.5">
+                    Your contribution helps fund scholarships, events, and student development programs.
+                  </p>
+                </div>
+              </div>
+              <Button
+                onClick={() => {
+                  setDonateAmount('500')
+                  setDonatePurpose('general')
+                  setDonateCustomAmount('')
+                  setDonateMessage('')
+                  setDonateDialogOpen(true)
+                }}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2 shrink-0"
+              >
+                <Heart className="w-4 h-4" />
+                Donate Now
+              </Button>
+            </div>
+
+            {/* Quick donate amount chips */}
+            <div className="flex flex-wrap gap-2 mt-4">
+              {[{ label: 'Scholarship Fund', amount: '1000', purpose: 'scholarship' }, { label: 'Event Sponsorship', amount: '2500', purpose: 'event' }, { label: 'Infrastructure', amount: '5000', purpose: 'infrastructure' }, { label: 'Student Welfare', amount: '500', purpose: 'welfare' }].map((item) => (
+                <button
+                  key={item.purpose}
+                  onClick={() => {
+                    setDonateAmount(item.amount)
+                    setDonatePurpose(item.purpose)
+                    setDonateCustomAmount('')
+                    setDonateMessage('')
+                    setDonateDialogOpen(true)
+                  }}
+                  className="px-3 py-1.5 rounded-full text-xs font-medium border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400 bg-white/80 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors"
+                >
+                  {item.label} - INR {item.amount}
+                </button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Payments Table */}
       <Card>
         <CardContent className="p-0">
@@ -957,6 +1020,178 @@ export function PaymentsView() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Donate Now Dialog */}
+      <Dialog open={donateDialogOpen} onOpenChange={setDonateDialogOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-emerald-600 flex items-center justify-center">
+                <Heart className="w-4 h-4 text-white" />
+              </div>
+              Make a Donation
+            </DialogTitle>
+            <DialogDescription>
+              Support Dr. J. J. Magdum College of Engineering students and initiatives.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-5">
+            {/* Purpose Selection */}
+            <div className="space-y-2">
+              <Label>Donation Purpose</Label>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { value: 'scholarship', label: 'Student Scholarship', icon: GraduationCap, desc: 'Help deserving students' },
+                  { value: 'event', label: 'Event Sponsorship', icon: Calendar, desc: 'Fund college events' },
+                  { value: 'infrastructure', label: 'Infrastructure', icon: Building, desc: 'Lab & facility upgrades' },
+                  { value: 'welfare', label: 'Student Welfare', icon: Heart, desc: 'General student support' },
+                  { value: 'general', label: 'General Fund', icon: DollarSign, desc: 'College development' },
+                ].map((item) => (
+                  <button
+                    key={item.value}
+                    onClick={() => setDonatePurpose(item.value)}
+                    className={`p-3 rounded-lg border-2 text-left transition-all ${
+                      donatePurpose === item.value
+                        ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/30'
+                        : 'border-muted hover:border-emerald-200 dark:hover:border-emerald-800'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <item.icon className={`w-4 h-4 ${donatePurpose === item.value ? 'text-emerald-600' : 'text-muted-foreground'}`} />
+                      <span className={`text-sm font-medium ${donatePurpose === item.value ? 'text-emerald-700 dark:text-emerald-400' : ''}`}>{item.label}</span>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground mt-1 ml-6">{item.desc}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Amount Selection */}
+            <div className="space-y-2">
+              <Label>Donation Amount (INR)</Label>
+              <div className="flex flex-wrap gap-2">
+                {['100', '500', '1000', '2500', '5000', '10000'].map((amt) => (
+                  <button
+                    key={amt}
+                    onClick={() => { setDonateAmount(amt); setDonateCustomAmount('') }}
+                    className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+                      donateAmount === amt && !donateCustomAmount
+                        ? 'bg-emerald-600 text-white shadow-sm'
+                        : 'bg-muted hover:bg-muted/80 text-foreground'
+                    }`}
+                  >
+                    {parseInt(amt).toLocaleString('en-IN')}
+                  </button>
+                ))}
+              </div>
+              <div className="relative mt-2">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-medium">INR</span>
+                <Input
+                  type="number"
+                  placeholder="Enter custom amount"
+                  value={donateCustomAmount}
+                  onChange={(e) => { setDonateCustomAmount(e.target.value); setDonateAmount('') }}
+                  className="pl-12"
+                  min="1"
+                />
+              </div>
+            </div>
+
+            {/* Message */}
+            <div className="space-y-2">
+              <Label htmlFor="donateMsg">Message (optional)</Label>
+              <Textarea
+                id="donateMsg"
+                placeholder="Leave a message with your donation..."
+                value={donateMessage}
+                onChange={(e) => setDonateMessage(e.target.value)}
+                rows={2}
+              />
+            </div>
+
+            {/* Summary */}
+            <div className="rounded-lg bg-muted p-4 space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Purpose</span>
+                <span className="font-medium capitalize">{donatePurpose === 'general' ? 'General Fund' : donatePurpose}</span>
+              </div>
+              <Separator />
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Amount</span>
+                <span className="font-bold text-lg text-emerald-600">
+                  INR {(donateCustomAmount || donateAmount || '0')}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setDonateDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={async () => {
+                if (!currentUser) return
+                const finalAmount = parseFloat(donateCustomAmount || donateAmount || '0')
+                if (!finalAmount || finalAmount <= 0) {
+                  addToast('Please enter a valid amount', 'error')
+                  return
+                }
+                setDonateProcessing(true)
+                try {
+                  // Create donation payment as COMPLETED (simulated)
+                  const res = await fetch('/api/payments', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      userId: currentUser.id,
+                      amount: finalAmount,
+                      currency: 'INR',
+                      type: 'DONATION',
+                      description: `Donation for ${donatePurpose === 'general' ? 'General Fund' : donatePurpose}${donateMessage ? ': ' + donateMessage : ''}`,
+                    }),
+                  })
+                  if (res.ok) {
+                    const newPayment = await res.json()
+                    // Mark as completed immediately (simulated payment)
+                    const completeRes = await fetch('/api/payments', {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ paymentId: newPayment.id, status: 'COMPLETED' }),
+                    })
+                    if (completeRes.ok) {
+                      setPayments((prev) => [newPayment, ...prev])
+                      addToast(`Thank you! Your donation of INR ${finalAmount.toLocaleString('en-IN')} has been received.`, 'success')
+                      setDonateDialogOpen(false)
+                    }
+                  } else {
+                    addToast('Failed to process donation', 'error')
+                  }
+                } catch {
+                  addToast('Failed to process donation', 'error')
+                } finally {
+                  setDonateProcessing(false)
+                }
+              }}
+              disabled={donateProcessing || (!donateCustomAmount && !donateAmount)}
+              className="bg-emerald-600 hover:bg-emerald-700"
+            >
+              {donateProcessing ? (
+                <>
+                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                  Processing...
+                </>
+              ) : (
+                <>
+                  <Heart className="w-4 h-4 mr-2" />
+                  Donate INR {(donateCustomAmount || donateAmount || '0')}
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Simulated Razorpay Payment Dialog */}
       <Dialog open={payDialogOpen} onOpenChange={setPayDialogOpen}>

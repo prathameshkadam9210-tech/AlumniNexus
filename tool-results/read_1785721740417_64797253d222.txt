@@ -1,0 +1,671 @@
+     1→'use client'
+     2→
+     3→import { useState, useRef } from 'react'
+     4→import { useAppStore, type UserRole } from '@/store/app-store'
+     5→import { Button } from '@/components/ui/button'
+     6→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+     7→import { Input } from '@/components/ui/input'
+     8→import { Label } from '@/components/ui/label'
+     9→import { Textarea } from '@/components/ui/textarea'
+    10→import {
+    11→  Dialog,
+    12→  DialogContent,
+    13→  DialogHeader,
+    14→  DialogTitle,
+    15→  DialogDescription,
+    16→} from '@/components/ui/dialog'
+    17→import {
+    18→  Select,
+    19→  SelectContent,
+    20→  SelectItem,
+    21→  SelectTrigger,
+    22→  SelectValue,
+    23→} from '@/components/ui/select'
+    24→import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+    25→import {
+    26→  Briefcase,
+    27→  Users,
+    28→  Brain,
+    29→  Network,
+    30→  GraduationCap,
+    31→  Sparkles,
+    32→  ChevronRight,
+    33→  Loader2,
+    34→  BookOpen,
+    35→  Mail,
+    36→  Key,
+    37→  ArrowLeft,
+    38→  CheckCircle2,
+    39→  AlertCircle,
+    40→  Clock,
+    41→} from 'lucide-react'
+    42→
+    43→const ROLE_LABELS: Record<UserRole, string> = {
+    44→  STUDENT: 'Student',
+    45→  ALUMNI: 'Alumni',
+    46→  RECRUITER: 'Recruiter',
+    47→  ADMIN: 'Admin',
+    48→  PLACEMENT_CELL: 'Placement Cell',
+    49→}
+    50→
+    51→const VALID_DOMAIN = '.jjmcoe.ac.in'
+    52→
+    53→const FEATURES = [
+    54→  { icon: Briefcase, title: 'Jobs & Internships', description: 'Discover curated job opportunities and internships from top companies.', gradient: 'from-emerald-500 to-teal-600' },
+    55→  { icon: Users, title: 'Mentorship', description: 'Connect with experienced alumni mentors for career guidance.', gradient: 'from-teal-500 to-cyan-600' },
+    56→  { icon: Brain, title: 'AI Career Guidance', description: 'Get personalized career recommendations powered by AI.', gradient: 'from-cyan-500 to-emerald-600' },
+    57→  { icon: Network, title: 'Alumni Network', description: 'Build lasting connections with graduates worldwide.', gradient: 'from-emerald-600 to-cyan-500' },
+    58→]
+    59→
+    60→const DEMO_ACCOUNTS = [
+    61→  { role: 'STUDENT' as UserRole, email: 'aditya.shinde@jjmcoe.ac.in', password: 'demo123', label: 'Student', color: 'bg-emerald-600 hover:bg-emerald-500' },
+    62→  { role: 'ALUMNI' as UserRole, email: 'rahul.pawar@jjmcoe.ac.in', password: 'demo123', label: 'Alumni', color: 'bg-teal-600 hover:bg-teal-500' },
+    63→  { role: 'RECRUITER' as UserRole, email: 'hr@tcs.com', password: 'demo123', label: 'Recruiter', color: 'bg-cyan-600 hover:bg-cyan-500' },
+    64→  { role: 'ADMIN' as UserRole, email: 'admin@jjmcoe.ac.in', password: 'admin123', label: 'Admin', color: 'bg-emerald-700 hover:bg-emerald-600' },
+    65→]
+    66→
+    67→type AuthView = 'main' | 'verify-email' | 'forgot-password' | 'reset-password' | 'verification-success'
+    68→
+    69→export function LandingPage() {
+    70→  const login = useAppStore((s) => s.login)
+    71→  const signup = useAppStore((s) => s.signup)
+    72→  const isLoading = useAppStore((s) => s.isLoading)
+    73→  const addToast = useAppStore((s) => s.addToast)
+    74→
+    75→  const [authOpen, setAuthOpen] = useState(false)
+    76→  const [activeTab, setActiveTab] = useState<'login' | 'register'>('login')
+    77→  const [authView, setAuthView] = useState<AuthView>('main')
+    78→
+    79→  // Login
+    80→  const [loginEmail, setLoginEmail] = useState('')
+    81→  const [loginPassword, setLoginPassword] = useState('')
+    82→
+    83→  // Register
+    84→  const [regName, setRegName] = useState('')
+    85→  const [regEmail, setRegEmail] = useState('')
+    86→  const [regPassword, setRegPassword] = useState('')
+    87→  const [regRole, setRegRole] = useState<UserRole>('STUDENT')
+    88→  const [regDepartment, setRegDepartment] = useState('')
+    89→  const [regPhone, setRegPhone] = useState('')
+    90→  const [regSkills, setRegSkills] = useState('')
+    91→
+    92→  // OTP Verification
+    93→  const [otpDigits, setOtpDigits] = useState(['', '', '', '', '', ''])
+    94→  const [otpLoading, setOtpLoading] = useState(false)
+    95→  const [otpError, setOtpError] = useState('')
+    96→  const [verifyEmail, setVerifyEmail] = useState('')
+    97→  const [pendingUser, setPendingUser] = useState<{ name: string; email: string; password: string; role: string } | null>(null)
+    98→  const otpRefs = useRef<(HTMLInputElement | null)[]>([])
+    99→
+   100→  // Forgot Password
+   101→  const [forgotEmail, setForgotEmail] = useState('')
+   102→  const [forgotOtpDigits, setForgotOtpDigits] = useState(['', '', '', '', '', ''])
+   103→  const [newPassword, setNewPassword] = useState('')
+   104→  const [confirmPassword, setConfirmPassword] = useState('')
+   105→  const forgotRefs = useRef<(HTMLInputElement | null)[]>([])
+   106→
+   107→  const handleOtpChange = (index: number, value: string, isForgot = false) => {
+   108→    const setter = isForgot ? setForgotOtpDigits : setOtpDigits
+   109→    const digits = isForgot ? [...forgotOtpDigits] : [...otpDigits]
+   110→
+   111→    if (value.length > 1) {
+   112→      // Handle paste
+   113→      const pasted = value.replace(/\D/g, '').slice(0, 6).split('')
+   114→      for (let i = 0; i < pasted.length && index + i < 6; i++) {
+   115→        digits[index + i] = pasted[i]
+   116→      }
+   117→      setter(digits)
+   118→      const nextIdx = Math.min(index + pasted.length, 5)
+   119→      const refs = isForgot ? forgotRefs : otpRefs
+   120→      refs.current[nextIdx]?.focus()
+   121→      return
+   122→    }
+   123→
+   124→    if (/\d/.test(value) || value === '') {
+   125→      digits[index] = value
+   126→      setter(digits)
+   127→      if (value && index < 5) {
+   128→        const refs = isForgot ? forgotRefs : otpRefs
+   129→        refs.current[index + 1]?.focus()
+   130→      }
+   131→    }
+   132→  }
+   133→
+   134→  const handleOtpKeyDown = (index: number, e: React.KeyboardEvent, isForgot = false) => {
+   135→    if (e.key === 'Backspace' && !isForgot ? !otpDigits[index] : !forgotOtpDigits[index]) {
+   136→      if (index > 0) {
+   137→        const refs = isForgot ? forgotRefs : otpRefs
+   138→        refs.current[index - 1]?.focus()
+   139→      }
+   140→    }
+   141→  }
+   142→
+   143→  const needsCollegeEmail = (role: UserRole) => role === 'STUDENT' || role === 'ALUMNI'
+   144→
+   145→  const handleLogin = async () => {
+   146→    if (!loginEmail || !loginPassword) {
+   147→      addToast('Please fill in all fields', 'error')
+   148→      return
+   149→    }
+   150→    const ok = await login(loginEmail, loginPassword)
+   151→    if (!ok) {
+   152→      // Check if needs verification
+   153→      setAuthView('verify-email')
+   154→      setVerifyEmail(loginEmail)
+   155→    }
+   156→    if (ok) setAuthOpen(false)
+   157→  }
+   158→
+   159→  const handleRegister = async () => {
+   160→    if (!regName || !regEmail || !regPassword) {
+   161→      addToast('Please fill in required fields (Name, Email, Password)', 'error')
+   162→      return
+   163→    }
+   164→    if (needsCollegeEmail(regRole) && !regEmail.toLowerCase().endsWith(VALID_DOMAIN)) {
+   165→      addToast(`Students and Alumni must use college email ending with ${VALID_DOMAIN}`, 'error')
+   166→      return
+   167→    }
+   168→    if (regPassword.length < 6) {
+   169→      addToast('Password must be at least 6 characters', 'error')
+   170→      return
+   171→    }
+   172→
+   173→    // If college email, show OTP verification after registration
+   174→    if (needsCollegeEmail(regRole)) {
+   175→      setPendingUser({ name: regName, email: regEmail, password: regPassword, role: regRole })
+   176→      setVerifyEmail(regEmail)
+   177→      setAuthView('verify-email')
+   178→      // First create account (backend sends OTP)
+   179→      const res = await fetch('/api/auth', {
+   180→        method: 'POST',
+   181→        headers: { 'Content-Type': 'application/json' },
+   182→        body: JSON.stringify({ action: 'signup', ...pendingUser ? { name: regName, email: regEmail, password: regPassword, role: regRole, department: regDepartment, phone: regPhone, skills: regSkills } : {} }),
+   183→      })
+   184→      if (res.ok) {
+   185→        const data = await res.json()
+   186→        if (data.demoOTP) {
+   187→          addToast(`Demo OTP: ${data.demoOTP}`, 'info')
+   188→        }
+   189→      } else {
+   190→        const err = await res.json()
+   191→        addToast(err.error || 'Registration failed', 'error')
+   192→        setAuthView('main')
+   193→      }
+   194→      return
+   195→    }
+   196→
+   197→    const ok = await signup({
+   198→      name: regName, email: regEmail, password: regPassword, role: regRole,
+   199→      department: regDepartment || undefined, phone: regPhone || undefined, skills: regSkills || undefined,
+   200→    })
+   201→    if (ok) setAuthOpen(false)
+   202→  }
+   203→
+   204→  const handleVerifyOtp = async (isForgot = false) => {
+   205→    const digits = isForgot ? forgotOtpDigits : otpDigits
+   206→    const otp = digits.join('')
+   207→    if (otp.length !== 6) {
+   208→      setOtpError('Please enter all 6 digits')
+   209→      return
+   210→    }
+   211→
+   212→    setOtpLoading(true)
+   213→    setOtpError('')
+   214→
+   215→    try {
+   216→      if (isForgot) {
+   217→        if (!newPassword || newPassword.length < 6) {
+   218→          setOtpError('Password must be at least 6 characters')
+   219→          setOtpLoading(false)
+   220→          return
+   221→        }
+   222→        if (newPassword !== confirmPassword) {
+   223→          setOtpError('Passwords do not match')
+   224→          setOtpLoading(false)
+   225→          return
+   226→        }
+   227→        const res = await fetch('/api/auth/forgot-password', {
+   228→          method: 'PUT',
+   229→          headers: { 'Content-Type': 'application/json' },
+   230→          body: JSON.stringify({ email: forgotEmail, otp, newPassword }),
+   231→        })
+   232→        if (res.ok) {
+   233→          addToast('Password reset successfully! You can now login.', 'success')
+   234→          setAuthView('main')
+   235→          setActiveTab('login')
+   236→        } else {
+   237→          const err = await res.json()
+   238→          setOtpError(err.error || 'Verification failed')
+   239→        }
+   240→      } else {
+   241→        const res = await fetch('/api/auth/verify-email', {
+   242→          method: 'PUT',
+   243→          headers: { 'Content-Type': 'application/json' },
+   244→          body: JSON.stringify({ email: verifyEmail, otp }),
+   245→        })
+   246→        if (res.ok) {
+   247→          addToast('Email verified successfully!', 'success')
+   248→          if (pendingUser) {
+   249→            const ok = await login(pendingUser.email, pendingUser.password)
+   250→            if (ok) setAuthOpen(false)
+   251→          } else {
+   252→            setAuthView('verification-success')
+   253→          }
+   254→        } else {
+   255→          const err = await res.json()
+   256→          setOtpError(err.error || 'Invalid OTP')
+   257→        }
+   258→      }
+   259→    } catch {
+   260→      setOtpError('Network error. Please try again.')
+   261→    } finally {
+   262→      setOtpLoading(false)
+   263→    }
+   264→  }
+   265→
+   266→  const handleSendOtp = async (email: string, isForgot = false) => {
+   267→    setOtpLoading(true)
+   268→    setOtpError('')
+   269→    try {
+   270→      const endpoint = isForgot ? '/api/auth/forgot-password' : '/api/auth/verify-email'
+   271→      const res = await fetch(endpoint, {
+   272→        method: 'POST',
+   273→        headers: { 'Content-Type': 'application/json' },
+   274→        body: JSON.stringify({ email }),
+   275→      })
+   276→      if (res.ok) {
+   277→        const data = await res.json()
+   278→        addToast(`OTP sent! Demo OTP: ${data.demoOTP}`, 'info')
+   279→      } else {
+   280→        const err = await res.json()
+   281→        setOtpError(err.error || 'Failed to send OTP')
+   282→      }
+   283→    } catch {
+   284→      setOtpError('Network error')
+   285→    } finally {
+   286→      setOtpLoading(false)
+   287→    }
+   288→  }
+   289→
+   290→  const handleForgotPassword = async () => {
+   291→    if (!forgotEmail) {
+   292→      addToast('Please enter your email', 'error')
+   293→      return
+   294→    }
+   295→    setAuthView('reset-password')
+   296→    setForgotOtpDigits(['', '', '', '', '', ''])
+   297→    setNewPassword('')
+   298→    setConfirmPassword('')
+   299→    setOtpError('')
+   300→    await handleSendOtp(forgotEmail, true)
+   301→  }
+   302→
+   303→  const handleDemoLogin = async (demo: (typeof DEMO_ACCOUNTS)[number]) => {
+   304→    setAuthOpen(false)
+   305→    await login(demo.email, demo.password)
+   306→  }
+   307→
+   308→  const resetToMain = () => {
+   309→    setAuthView('main')
+   310→    setOtpError('')
+   311→    setOtpDigits(['', '', '', '', '', ''])
+   312→    setForgotOtpDigits(['', '', '', '', '', ''])
+   313→    setPendingUser(null)
+   314→  }
+   315→
+   316→  const renderOtpInputs = (digits: string[], isForgot: boolean) => (
+   317→    <div className="flex justify-center gap-2 my-4">
+   318→      {digits.map((digit, i) => (
+   319→        <Input
+   320→          key={i}
+   321→          ref={(el) => { (isForgot ? forgotRefs : otpRefs).current[i] = el }}
+   322→          type="text"
+   323→          inputMode="numeric"
+   324→          maxLength={6}
+   325→          className="w-11 h-12 text-center text-xl font-bold border-2 border-emerald-200 focus:border-emerald-500"
+   326→          value={digit}
+   327→          onChange={(e) => handleOtpChange(i, e.target.value, isForgot)}
+   328→          onKeyDown={(e) => handleOtpKeyDown(i, e, isForgot)}
+   329→          onPaste={(e) => {
+   330→            e.preventDefault()
+   331→            const paste = e.clipboardData.getData('text')
+   332→            handleOtpChange(i, paste, isForgot)
+   333→          }}
+   334→        />
+   335→      ))}
+   336→    </div>
+   337→  )
+   338→
+   339→  const renderAuthContent = () => {
+   340→    if (authView === 'verify-email') {
+   341→      return (
+   342→        <div className="space-y-4">
+   343→          <div className="text-center">
+   344→            <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center mx-auto mb-3">
+   345→              <Mail className="w-8 h-8 text-emerald-600" />
+   346→            </div>
+   347→            <h3 className="text-lg font-bold">Verify Your Email</h3>
+   348→            <p className="text-sm text-muted-foreground mt-1">
+   349→              Enter the 6-digit OTP sent to<br />
+   350→              <span className="font-medium text-foreground">{verifyEmail}</span>
+   351→            </p>
+   352→          </div>
+   353→
+   354→          {renderOtpInputs(otpDigits, false)}
+   355→
+   356→          {otpError && (
+   357→            <div className="flex items-center gap-2 text-red-500 text-sm bg-red-50 dark:bg-red-950/30 p-2 rounded-lg">
+   358→              <AlertCircle className="w-4 h-4" />
+   359→              {otpError}
+   360→            </div>
+   361→          )}
+   362→
+   363→          <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+   364→            <Clock className="w-4 h-4" />
+   365→            OTP expires in 10 minutes
+   366→          </div>
+   367→
+   368→          <div className="flex flex-col gap-2">
+   369→            <Button className="w-full bg-emerald-600 hover:bg-emerald-500" onClick={() => handleVerifyOtp(false)} disabled={otpLoading}>
+   370→              {otpLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+   371→              Verify OTP
+   372→            </Button>
+   373→            <div className="flex gap-2">
+   374→              <Button variant="outline" className="flex-1" onClick={() => handleSendOtp(verifyEmail, false)} disabled={otpLoading}>
+   375→                Resend OTP
+   376→              </Button>
+   377→              <Button variant="ghost" className="flex-1" onClick={resetToMain}>
+   378→                <ArrowLeft className="w-4 h-4 mr-1" /> Back
+   379→              </Button>
+   380→            </div>
+   381→          </div>
+   382→        </div>
+   383→      )
+   384→    }
+   385→
+   386→    if (authView === 'forgot-password') {
+   387→      return (
+   388→        <div className="space-y-4">
+   389→          <div className="text-center">
+   390→            <div className="w-16 h-16 rounded-full bg-amber-100 flex items-center justify-center mx-auto mb-3">
+   391→              <Key className="w-8 h-8 text-amber-600" />
+   392→            </div>
+   393→            <h3 className="text-lg font-bold">Forgot Password</h3>
+   394→            <p className="text-sm text-muted-foreground mt-1">Enter your email to receive a reset OTP</p>
+   395→          </div>
+   396→          <div className="space-y-2">
+   397→            <Label htmlFor="forgot-email">Email Address</Label>
+   398→            <Input
+   399→              id="forgot-email"
+   400→              type="email"
+   401→              placeholder="you@jjmcoe.ac.in"
+   402→              value={forgotEmail}
+   403→              onChange={(e) => setForgotEmail(e.target.value)}
+   404→              onKeyDown={(e) => e.key === 'Enter' && handleForgotPassword()}
+   405→            />
+   406→          </div>
+   407→          {otpError && (
+   408→            <div className="flex items-center gap-2 text-red-500 text-sm">
+   409→              <AlertCircle className="w-4 h-4" />{otpError}
+   410→            </div>
+   411→          )}
+   412→          <Button className="w-full bg-emerald-600 hover:bg-emerald-500" onClick={handleForgotPassword} disabled={otpLoading}>
+   413→            {otpLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+   414→            Send Reset OTP
+   415→          </Button>
+   416→          <Button variant="ghost" className="w-full" onClick={resetToMain}>
+   417→            <ArrowLeft className="w-4 h-4 mr-1" /> Back to Login
+   418→          </Button>
+   419→        </div>
+   420→      )
+   421→    }
+   422→
+   423→    if (authView === 'reset-password') {
+   424→      return (
+   425→        <div className="space-y-4">
+   426→          <div className="text-center">
+   427→            <div className="w-16 h-16 rounded-full bg-amber-100 flex items-center justify-center mx-auto mb-3">
+   428→              <Key className="w-8 h-8 text-amber-600" />
+   429→            </div>
+   430→            <h3 className="text-lg font-bold">Reset Password</h3>
+   431→            <p className="text-sm text-muted-foreground mt-1">
+   432→              Enter OTP sent to <span className="font-medium">{forgotEmail}</span>
+   433→            </p>
+   434→          </div>
+   435→
+   436→          {renderOtpInputs(forgotOtpDigits, true)}
+   437→
+   438→          <div className="space-y-2">
+   439→            <Label htmlFor="new-password">New Password</Label>
+   440→            <Input id="new-password" type="password" placeholder="Min 6 characters" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+   441→          </div>
+   442→          <div className="space-y-2">
+   443→            <Label htmlFor="confirm-password">Confirm Password</Label>
+   444→            <Input id="confirm-password" type="password" placeholder="Re-enter password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
+   445→          </div>
+   446→
+   447→          {otpError && (
+   448→            <div className="flex items-center gap-2 text-red-500 text-sm">
+   449→              <AlertCircle className="w-4 h-4" />{otpError}
+   450→            </div>
+   451→          )}
+   452→
+   453→          <Button className="w-full bg-emerald-600 hover:bg-emerald-500" onClick={() => handleVerifyOtp(true)} disabled={otpLoading}>
+   454→            {otpLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+   455→            Reset Password
+   456→          </Button>
+   457→          <Button variant="ghost" className="w-full" onClick={() => setAuthView('forgot-password')}>
+   458→            <ArrowLeft className="w-4 h-4 mr-1" /> Back
+   459→          </Button>
+   460→        </div>
+   461→      )
+   462→    }
+   463→
+   464→    if (authView === 'verification-success') {
+   465→      return (
+   466→        <div className="text-center space-y-4 py-4">
+   467→          <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center mx-auto">
+   468→            <CheckCircle2 className="w-8 h-8 text-emerald-600" />
+   469→          </div>
+   470→          <h3 className="text-lg font-bold">Email Verified!</h3>
+   471→          <p className="text-sm text-muted-foreground">Your email has been verified. You can now log in.</p>
+   472→          <Button className="w-full bg-emerald-600 hover:bg-emerald-500" onClick={() => { setAuthView('main'); setActiveTab('login') }}>
+   473→            Go to Login
+   474→          </Button>
+   475→        </div>
+   476→      )
+   477→    }
+   478→
+   479→    // Main auth view
+   480→    return (
+   481→      <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v as 'login' | 'register'); setAuthView('main') }}>
+   482→        <TabsList className="grid w-full grid-cols-2 mb-4">
+   483→          <TabsTrigger value="login">Login</TabsTrigger>
+   484→          <TabsTrigger value="register">Register</TabsTrigger>
+   485→        </TabsList>
+   486→
+   487→        <TabsContent value="login" className="space-y-4">
+   488→          <div className="space-y-2">
+   489→            <Label htmlFor="login-email">Email</Label>
+   490→            <Input id="login-email" type="email" placeholder="you@jjmcoe.ac.in" value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleLogin()} />
+   491→          </div>
+   492→          <div className="space-y-2">
+   493→            <Label htmlFor="login-password">Password</Label>
+   494→            <Input id="login-password" type="password" placeholder="Enter your password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleLogin()} />
+   495→          </div>
+   496→          <div className="flex justify-end">
+   497→            <Button variant="link" className="text-emerald-600 p-0 h-auto text-sm" onClick={() => { setForgotEmail(loginEmail); setAuthView('forgot-password') }}>
+   498→              Forgot Password?
+   499→            </Button>
+   500→          </div>
+   501→          <Button className="w-full bg-emerald-600 hover:bg-emerald-500" onClick={handleLogin} disabled={isLoading}>
+   502→            {isLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+   503→            Login
+   504→          </Button>
+   505→          <div className="text-center text-xs text-muted-foreground">
+   506→            Use your <span className="font-medium text-emerald-600">{VALID_DOMAIN}</span> college email for Students/Alumni
+   507→          </div>
+   508→        </TabsContent>
+   509→
+   510→        <TabsContent value="register" className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
+   511→          <div className="space-y-2">
+   512→            <Label htmlFor="reg-role">Role *</Label>
+   513→            <Select value={regRole} onValueChange={(v) => setRegRole(v as UserRole)}>
+   514→              <SelectTrigger id="reg-role"><SelectValue placeholder="Select role" /></SelectTrigger>
+   515→              <SelectContent>
+   516→                {Object.entries(ROLE_LABELS).map(([key, label]) => (
+   517→                  <SelectItem key={key} value={key}>{label}</SelectItem>
+   518→                ))}
+   519→              </SelectContent>
+   520→            </Select>
+   521→            {needsCollegeEmail(regRole) && (
+   522→              <p className="text-xs text-amber-600 flex items-center gap-1">
+   523→                <AlertCircle className="w-3 h-3" />
+   524→                Requires college email ({VALID_DOMAIN})
+   525→              </p>
+   526→            )}
+   527→          </div>
+   528→          <div className="space-y-2">
+   529→            <Label htmlFor="reg-name">Full Name *</Label>
+   530→            <Input id="reg-name" placeholder="John Doe" value={regName} onChange={(e) => setRegName(e.target.value)} />
+   531→          </div>
+   532→          <div className="space-y-2">
+   533→            <Label htmlFor="reg-email">Email *</Label>
+   534→            <Input id="reg-email" type="email" placeholder={needsCollegeEmail(regRole) ? `you${VALID_DOMAIN}` : 'you@company.com'} value={regEmail} onChange={(e) => setRegEmail(e.target.value)} />
+   535→            {regEmail && needsCollegeEmail(regRole) && !regEmail.toLowerCase().endsWith(VALID_DOMAIN) && (
+   536→              <p className="text-xs text-red-500 flex items-center gap-1">
+   537→                <AlertCircle className="w-3 h-3" />
+   538→                Must end with {VALID_DOMAIN}
+   539→              </p>
+   540→            )}
+   541→          </div>
+   542→          <div className="space-y-2">
+   543→            <Label htmlFor="reg-password">Password *</Label>
+   544→            <Input id="reg-password" type="password" placeholder="Min 6 characters" value={regPassword} onChange={(e) => setRegPassword(e.target.value)} />
+   545→          </div>
+   546→          <div className="space-y-2">
+   547→            <Label htmlFor="reg-department">Department</Label>
+   548→            <Input id="reg-department" placeholder="Information Technology" value={regDepartment} onChange={(e) => setRegDepartment(e.target.value)} />
+   549→          </div>
+   550→          <div className="space-y-2">
+   551→            <Label htmlFor="reg-phone">Phone</Label>
+   552→            <Input id="reg-phone" type="tel" placeholder="+91 98765 43210" value={regPhone} onChange={(e) => setRegPhone(e.target.value)} />
+   553→          </div>
+   554→          <div className="space-y-2">
+   555→            <Label htmlFor="reg-skills">Skills</Label>
+   556→            <Textarea id="reg-skills" placeholder="React, Python, ML..." value={regSkills} onChange={(e) => setRegSkills(e.target.value)} rows={2} />
+   557→          </div>
+   558→          <Button className="w-full bg-emerald-600 hover:bg-emerald-500" onClick={handleRegister} disabled={isLoading}>
+   559→            {isLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+   560→            Register
+   561→          </Button>
+   562→        </TabsContent>
+   563→      </Tabs>
+   564→    )
+   565→  }
+   566→
+   567→  return (
+   568→    <div className="min-h-screen flex flex-col">
+   569→      {/* Hero */}
+   570→      <section className="relative flex-1 flex flex-col items-center justify-center bg-gradient-to-br from-emerald-900 via-teal-800 to-cyan-900 px-4 py-20 md:py-28">
+   571→        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+   572→          <div className="absolute -top-40 -right-40 w-96 h-96 bg-emerald-400/10 rounded-full blur-3xl" />
+   573→          <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-cyan-400/10 rounded-full blur-3xl" />
+   574→        </div>
+   575→        <div className="relative z-10 max-w-5xl mx-auto text-center">
+   576→          <div className="inline-flex items-center gap-2 px-4 py-1.5 mb-6 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 text-emerald-100 text-sm font-medium">
+   577→            <Sparkles className="w-4 h-4" /> AI-Powered Career Platform
+   578→          </div>
+   579→          <h1 className="text-5xl md:text-7xl font-bold text-white mb-4 tracking-tight">
+   580→            Alumni<span className="text-emerald-300">Portal</span>
+   581→          </h1>
+   582→          <p className="text-lg md:text-xl text-emerald-100/80 max-w-2xl mx-auto mb-8">Connecting Students, Alumni, Industry, and Opportunities Through AI</p>
+   583→          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white/5 backdrop-blur-sm border border-white/10 mb-10">
+   584→            <GraduationCap className="w-5 h-5 text-emerald-300" />
+   585→            <span className="text-emerald-100/90 text-sm md:text-base font-medium">Dr. J. J. Magdum College of Engineering, Jaysingpur</span>
+   586→          </div>
+   587→          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+   588→            <Button size="lg" className="bg-emerald-500 hover:bg-emerald-400 text-white font-semibold px-8 py-6 shadow-lg shadow-emerald-500/25" onClick={() => { setActiveTab('login'); setAuthView('main'); setAuthOpen(true) }}>
+   589→              Get Started <ChevronRight className="w-4 h-4 ml-1" />
+   590→            </Button>
+   591→            <Button size="lg" variant="outline" className="border-white/30 text-white hover:bg-white/10 px-8 py-6 backdrop-blur-sm" onClick={() => { setActiveTab('register'); setAuthView('main'); setAuthOpen(true) }}>
+   592→              Create Account
+   593→            </Button>
+   594→          </div>
+   595→        </div>
+   596→      </section>
+   597→
+   598→      {/* Features */}
+   599→      <section className="bg-background py-16 md:py-24 px-4">
+   600→        <div className="max-w-6xl mx-auto">
+   601→          <div className="text-center mb-12">
+   602→            <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-3">Everything You Need to Succeed</h2>
+   603→            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">A comprehensive platform designed to bridge the gap between academia and industry.</p>
+   604→          </div>
+   605→          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+   606→            {FEATURES.map((f) => (
+   607→              <Card key={f.title} className="group border-border/50 hover:border-emerald-500/50 hover:shadow-lg hover:shadow-emerald-500/5 transition-all">
+   608→                <CardHeader className="pb-4">
+   609→                  <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${f.gradient} flex items-center justify-center mb-3 group-hover:scale-110 transition-transform`}>
+   610→                    <f.icon className="w-6 h-6 text-white" />
+   611→                  </div>
+   612→                  <CardTitle className="text-lg font-semibold">{f.title}</CardTitle>
+   613→                </CardHeader>
+   614→                <CardContent><p className="text-muted-foreground text-sm leading-relaxed">{f.description}</p></CardContent>
+   615→              </Card>
+   616→            ))}
+   617→          </div>
+   618→        </div>
+   619→      </section>
+   620→
+   621→      {/* Demo */}
+   622→      <section className="bg-muted/40 py-16 px-4">
+   623→        <div className="max-w-4xl mx-auto text-center">
+   624→          <div className="inline-flex items-center gap-2 mb-4">
+   625→            <BookOpen className="w-5 h-5 text-emerald-600" />
+   626→            <span className="text-sm font-medium text-emerald-600 uppercase tracking-wider">Quick Demo</span>
+   627→          </div>
+   628→          <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-3">Try It Out Instantly</h2>
+   629→          <p className="text-muted-foreground mb-8 max-w-lg mx-auto">Click any button below to log in as a demo user.</p>
+   630→          <div className="flex flex-wrap justify-center gap-3">
+   631→            {DEMO_ACCOUNTS.map((demo) => (
+   632→              <Button key={demo.role} variant="outline" className={`${demo.color} text-white border-0 font-medium px-6`} onClick={() => handleDemoLogin(demo)}>
+   633→                {demo.label}
+   634→              </Button>
+   635→            ))}
+   636→          </div>
+   637→        </div>
+   638→      </section>
+   639→
+   640→      {/* Footer */}
+   641→      <footer className="bg-foreground text-muted-foreground py-6 px-4">
+   642→        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2 text-sm">
+   643→          <p>&copy; {new Date().getFullYear()} AlumniPortal &mdash; JJMCOE, Jaysingpur</p>
+   644→          <p>Built with AI</p>
+   645→        </div>
+   646→      </footer>
+   647→
+   648→      {/* Auth Dialog */}
+   649→      <Dialog open={authOpen} onOpenChange={(open) => { setAuthOpen(open); if (!open) resetToMain() }}>
+   650→        <DialogContent className="sm:max-w-md">
+   651→          {authView === 'main' ? (
+   652→            <DialogHeader>
+   653→              <DialogTitle className="text-2xl font-bold text-center">
+   654→                {activeTab === 'login' ? 'Welcome Back' : 'Create Account'}
+   655→              </DialogTitle>
+   656→              <DialogDescription className="text-center">
+   657→                {activeTab === 'login' ? 'Sign in to your AlumniPortal account' : 'Join the AlumniPortal community'}
+   658→              </DialogDescription>
+   659→            </DialogHeader>
+   660→          ) : (
+   661→            <DialogHeader>
+   662→              <DialogTitle className="sr-only">{authView}</DialogTitle>
+   663→            </DialogHeader>
+   664→          )}
+   665→          {renderAuthContent()}
+   666→        </DialogContent>
+   667→      </Dialog>
+   668→    </div>
+   669→  )
+   670→}
+   671→

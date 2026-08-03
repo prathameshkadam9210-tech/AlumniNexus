@@ -139,3 +139,19 @@ Stage Summary:
 - Multi-college data (JJMCOE + PICT organizations)
 - WebSocket service running on port 3003
 - All 14 users, 7 events, 8 payments, 6 certificates seeded
+
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix Resume Builder navigation, AI Chat scroll lock, and add Donation feature
+
+Work Log:
+- Fixed Resume Builder: Updated DynamicView in nav.tsx to accept optional `view` prop and pass it to loaded components. Updated ViewRouter to pass `view="resume-builder"` when routing to resume builder. ProfileView in profile.tsx already supports the `view` prop.
+- Fixed AI Chat scroll lock: Replaced shadcn ScrollArea in the messages area with native `div` using `overflow-y-auto min-h-0` to enable proper scrolling for long AI responses.
+- Added Donation feature: Added "Support JJMCOE Students" donate card with quick-donate chips (Scholarship Fund, Event Sponsorship, Infrastructure, Student Welfare). Added full Donate Now dialog with purpose selection (5 categories), preset amounts, custom amount input, message field, and simulated payment processing. Creates DONATION payment records and notifies admins.
+
+Stage Summary:
+- Resume Builder now correctly navigates when clicking sidebar link, with existing profile data pre-filled
+- AI Chat messages area scrolls properly for long responses
+- Alumni & Students can now donate to the college via Payments page with purpose-based categories
+- Build verified: zero errors

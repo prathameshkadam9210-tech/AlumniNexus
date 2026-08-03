@@ -1,0 +1,997 @@
+     1→'use client'
+     2→
+     3→import { useState, useEffect, useMemo, useCallback } from 'react'
+     4→import { useAppStore, type User, type Mentorship as MentorshipType } from '@/store/app-store'
+     5→import { Button } from '@/components/ui/button'
+     6→import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+     7→import { Input } from '@/components/ui/input'
+     8→import { Textarea } from '@/components/ui/textarea'
+     9→import { Label } from '@/components/ui/label'
+    10→import { Badge } from '@/components/ui/badge'
+    11→import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+    12→import {
+    13→  Dialog,
+    14→  DialogContent,
+    15→  DialogDescription,
+    16→  DialogFooter,
+    17→  DialogHeader,
+    18→  DialogTitle,
+    19→  DialogTrigger,
+    20→} from '@/components/ui/dialog'
+    21→import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+    22→import {
+    23→  Select,
+    24→  SelectContent,
+    25→  SelectItem,
+    26→  SelectTrigger,
+    27→  SelectValue,
+    28→} from '@/components/ui/select'
+    29→import { Skeleton } from '@/components/ui/skeleton'
+    30→import { Separator } from '@/components/ui/separator'
+    31→import {
+    32→  Search,
+    33→  CalendarDays, CalendarPlus,
+    34→  Clock,
+    35→  MapPin,
+    36→  Briefcase,
+    37→  GraduationCap,
+    38→  Plus,
+    39→  CheckCircle2,
+    40→  XCircle,
+    41→  HourglassIcon,
+    42→  Video,
+    43→  MessageSquare,
+    44→  Users,
+    45→  ShieldCheck,
+    46→  Building2,
+    47→  ArrowLeft,
+    48→  UserPlus,
+    49→  CalendarClock,
+    50→  BookOpen,
+    51→  Filter,
+    52→} from 'lucide-react'
+    53→
+    54→// ─── Helpers ───────────────────────────────────────────────────────────────────
+    55→
+    56→const TIME_SLOTS = [
+    57→  '10:00 AM',
+    58→  '11:00 AM',
+    59→  '12:00 PM',
+    60→  '2:00 PM',
+    61→  '3:00 PM',
+    62→  '4:00 PM',
+    63→]
+    64→
+    65→const DURATIONS = [
+    66→  { value: 15, label: '15 minutes' },
+    67→  { value: 30, label: '30 minutes' },
+    68→  { value: 45, label: '45 minutes' },
+    69→  { value: 60, label: '1 hour' },
+    70→]
+    71→
+    72→function formatDate(dateStr: string): string {
+    73→  return new Date(dateStr).toLocaleDateString('en-IN', {
+    74→    year: 'numeric',
+    75→    month: 'short',
+    76→    day: 'numeric',
+    77→  })
+    78→}
+    79→
+    80→function statusColor(status: string) {
+    81→  switch (status.toUpperCase()) {
+    82→    case 'ACCEPTED':
+    83→    case 'COMPLETED':
+    84→      return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-400'
+    85→    case 'PENDING':
+    86→      return 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-400'
+    87→    case 'REJECTED':
+    88→    case 'CANCELLED':
+    89→      return 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-400'
+    90→    default:
+    91→      return 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'
+    92→  }
+    93→}
+    94→
+    95→function statusIcon(status: string) {
+    96→  switch (status.toUpperCase()) {
+    97→    case 'ACCEPTED':
+    98→    case 'COMPLETED':
+    99→      return <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+   100→    case 'REJECTED':
+   101→    case 'CANCELLED':
+   102→      return <XCircle className="h-4 w-4 text-red-500" />
+   103→    default:
+   104→      return <HourglassIcon className="h-4 w-4 text-amber-500" />
+   105→  }
+   106→}
+   107→
+   108→function getInitials(name: string): string {
+   109→  return name
+   110→    .split(' ')
+   111→    .map((n) => n[0])
+   112→    .join('')
+   113→    .toUpperCase()
+   114→    .slice(0, 2)
+   115→}
+   116→
+   117→// ─── Student Mentorship View ───────────────────────────────────────────────────
+   118→
+   119→function StudentMentorshipView() {
+   120→  const { mentorships, currentUser, addMentorship, addToast, setLoading, setCurrentView } = useAppStore()
+   121→  const [showBookingDialog, setShowBookingDialog] = useState(false)
+   122→  const [alumniList, setAlumniList] = useState<User[]>([])
+   123→  const [bookingForm, setBookingForm] = useState({
+   124→    mentorId: '',
+   125→    date: '',
+   126→    timeSlot: '',
+   127→    duration: '',
+   128→    topic: '',
+   129→  })
+   130→  const [errors, setErrors] = useState<Record<string, string>>({})
+   131→
+   132→  // Fetch alumni list for booking
+   133→  useEffect(() => {
+   134→    async function fetchAlumni() {
+   135→      try {
+   136→        const res = await fetch('/api/auth?action=alumni')
+   137→        if (res.ok) {
+   138→          const data = await res.json()
+   139→          setAlumniList(data)
+   140→        }
+   141→      } catch {
+   142→        // Silent fail
+   143→      }
+   144→    }
+   145→    fetchAlumni()
+   146→  }, [])
+   147→
+   148→  const myMentorships = mentorships.filter((m) => m.menteeId === currentUser?.id)
+   149→
+   150→  const upcoming = myMentorships.filter(
+   151→    (m) => m.status === 'ACCEPTED' || m.status === 'PENDING'
+   152→  )
+   153→  const past = myMentorships.filter(
+   154→    (m) => m.status === 'COMPLETED' || m.status === 'REJECTED' || m.status === 'CANCELLED'
+   155→  )
+   156→
+   157→  const updateField = (field: string, value: string) => {
+   158→    setBookingForm((prev) => ({ ...prev, [field]: value }))
+   159→    if (errors[field]) {
+   160→      setErrors((prev) => {
+   161→        const next = { ...prev }
+   162→        delete next[field]
+   163→        return next
+   164→      })
+   165→    }
+   166→  }
+   167→
+   168→  const validateBooking = () => {
+   169→    const errs: Record<string, string> = {}
+   170→    if (!bookingForm.mentorId) errs.mentorId = 'Please select a mentor'
+   171→    if (!bookingForm.date) errs.date = 'Please pick a date'
+   172→    if (!bookingForm.timeSlot) errs.timeSlot = 'Please select a time slot'
+   173→    if (!bookingForm.duration) errs.duration = 'Please select a duration'
+   174→    if (!bookingForm.topic.trim()) errs.topic = 'Please enter a topic'
+   175→    setErrors(errs)
+   176→    return Object.keys(errs).length === 0
+   177→  }
+   178→
+   179→  const handleBookSession = async () => {
+   180→    if (!validateBooking() || !currentUser) return
+   181→
+   182→    setLoading(true)
+   183→    try {
+   184→      const res = await fetch('/api/mentorships', {
+   185→        method: 'POST',
+   186→        headers: { 'Content-Type': 'application/json' },
+   187→        body: JSON.stringify({
+   188→          mentorId: bookingForm.mentorId,
+   189→          menteeId: currentUser.id,
+   190→          date: bookingForm.date,
+   191→          timeSlot: bookingForm.timeSlot,
+   192→          duration: Number(bookingForm.duration),
+   193→          topic: bookingForm.topic.trim(),
+   194→        }),
+   195→      })
+   196→
+   197→      if (!res.ok) {
+   198→        const err = await res.json()
+   199→        addToast(err.error || 'Failed to book session.', 'error')
+   200→        return
+   201→      }
+   202→
+   203→      const newMentorship = await res.json()
+   204→      addMentorship(newMentorship)
+   205→      setShowBookingDialog(false)
+   206→      setBookingForm({ mentorId: '', date: '', timeSlot: '', duration: '', topic: '' })
+   207→      addToast('Mentorship session booked successfully!', 'success')
+   208→    } catch {
+   209→      addToast('Something went wrong. Please try again.', 'error')
+   210→    } finally {
+   211→      setLoading(false)
+   212→    }
+   213→  }
+   214→
+   215→  const renderSessionCard = (session: MentorshipType) => (
+   216→    <Card key={session.id} className="transition-all hover:shadow-sm">
+   217→      <CardContent className="p-4 sm:p-5">
+   218→        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+   219→          <div className="flex items-start gap-3 min-w-0 flex-1">
+   220→            {statusIcon(session.status)}
+   221→            <div className="min-w-0">
+   222→              <h3 className="font-semibold truncate">{session.topic || 'Mentorship Session'}</h3>
+   223→              <p className="text-sm text-muted-foreground">
+   224→                with {session.mentorName || 'Alumni Mentor'}
+   225→              </p>
+   226→              <div className="mt-1.5 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+   227→                <span className="flex items-center gap-1">
+   228→                  <CalendarDays className="h-3 w-3" />
+   229→                  {formatDate(session.date)}
+   230→                </span>
+   231→                <span className="flex items-center gap-1">
+   232→                  <Clock className="h-3 w-3" />
+   233→                  {session.timeSlot}
+   234→                </span>
+   235→                <span className="flex items-center gap-1">
+   236→                  <HourglassIcon className="h-3 w-3" />
+   237→                  {session.duration} min
+   238→                </span>
+   239→              </div>
+   240→              {session.meetingLink && (
+   241→                <a
+   242→                  href={session.meetingLink}
+   243→                  target="_blank"
+   244→                  rel="noopener noreferrer"
+   245→                  className="mt-2 inline-flex items-center gap-1.5 text-xs text-primary hover:underline"
+   246→                  onClick={(e) => e.stopPropagation()}
+   247→                >
+   248→                  <Video className="h-3.5 w-3.5" />
+   249→                  Join Meeting
+   250→                </a>
+   251→              )}
+   252→            </div>
+   253→          </div>
+   254→          <Badge className={statusColor(session.status)}>{session.status}</Badge>
+   255→        </div>
+   256→      </CardContent>
+   257→    </Card>
+   258→  )
+   259→
+   260→  return (
+   261→    <div className="space-y-6">
+   262→      {/* Header */}
+   263→      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+   264→        <div>
+   265→          <h1 className="text-2xl font-bold tracking-tight">Mentorship</h1>
+   266→          <p className="text-sm text-muted-foreground">
+   267→            Connect with alumni mentors for guidance and career advice.
+   268→          </p>
+   269→        </div>
+   270→        <Dialog open={showBookingDialog} onOpenChange={setShowBookingDialog}>
+   271→          <DialogTrigger asChild>
+   272→            <Button className="gap-2">
+   273→              <CalendarPlus className="h-4 w-4" />
+   274→              Book a Session
+   275→            </Button>
+   276→          </DialogTrigger>
+   277→          <DialogContent className="sm:max-w-lg">
+   278→            <DialogHeader>
+   279→              <DialogTitle>Book a Mentorship Session</DialogTitle>
+   280→              <DialogDescription>
+   281→                Choose a mentor, pick a time, and describe what you would like to discuss.
+   282→              </DialogDescription>
+   283→            </DialogHeader>
+   284→            <div className="space-y-4 py-2">
+   285→              {/* Mentor Select */}
+   286→              <div className="space-y-2">
+   287→                <Label>Select Mentor *</Label>
+   288→                <Select value={bookingForm.mentorId} onValueChange={(v) => updateField('mentorId', v)}>
+   289→                  <SelectTrigger>
+   290→                    <SelectValue placeholder="Choose an alumni mentor" />
+   291→                  </SelectTrigger>
+   292→                  <SelectContent>
+   293→                    {alumniList.map((a) => (
+   294→                      <SelectItem key={a.id} value={a.id}>
+   295→                        {a.name} — {a.designation || a.company || 'Alumni'}
+   296→                      </SelectItem>
+   297→                    ))}
+   298→                  </SelectContent>
+   299→                </Select>
+   300→                {errors.mentorId && <p className="text-xs text-destructive">{errors.mentorId}</p>}
+   301→              </div>
+   302→
+   303→              {/* Date & Time */}
+   304→              <div className="grid gap-4 sm:grid-cols-2">
+   305→                <div className="space-y-2">
+   306→                  <Label htmlFor="session-date">Date *</Label>
+   307→                  <Input
+   308→                    id="session-date"
+   309→                    type="date"
+   310→                    value={bookingForm.date}
+   311→                    onChange={(e) => updateField('date', e.target.value)}
+   312→                    min={new Date().toISOString().split('T')[0]}
+   313→                  />
+   314→                  {errors.date && <p className="text-xs text-destructive">{errors.date}</p>}
+   315→                </div>
+   316→                <div className="space-y-2">
+   317→                  <Label>Time Slot *</Label>
+   318→                  <Select value={bookingForm.timeSlot} onValueChange={(v) => updateField('timeSlot', v)}>
+   319→                    <SelectTrigger>
+   320→                      <SelectValue placeholder="Pick a time" />
+   321→                    </SelectTrigger>
+   322→                    <SelectContent>
+   323→                      {TIME_SLOTS.map((slot) => (
+   324→                        <SelectItem key={slot} value={slot}>
+   325→                          {slot}
+   326→                        </SelectItem>
+   327→                      ))}
+   328→                    </SelectContent>
+   329→                  </Select>
+   330→                  {errors.timeSlot && <p className="text-xs text-destructive">{errors.timeSlot}</p>}
+   331→                </div>
+   332→              </div>
+   333→
+   334→              {/* Duration */}
+   335→              <div className="space-y-2">
+   336→                <Label>Duration *</Label>
+   337→                <Select value={bookingForm.duration} onValueChange={(v) => updateField('duration', v)}>
+   338→                  <SelectTrigger>
+   339→                    <SelectValue placeholder="Select duration" />
+   340→                  </SelectTrigger>
+   341→                  <SelectContent>
+   342→                    {DURATIONS.map((d) => (
+   343→                      <SelectItem key={d.value} value={d.value.toString()}>
+   344→                        {d.label}
+   345→                      </SelectItem>
+   346→                    ))}
+   347→                  </SelectContent>
+   348→                </Select>
+   349→                {errors.duration && <p className="text-xs text-destructive">{errors.duration}</p>}
+   350→              </div>
+   351→
+   352→              {/* Topic */}
+   353→              <div className="space-y-2">
+   354→                <Label htmlFor="session-topic">Topic / Discussion Points *</Label>
+   355→                <Textarea
+   356→                  id="session-topic"
+   357→                  placeholder="e.g. Career advice for switching from engineering to product management..."
+   358→                  rows={3}
+   359→                  value={bookingForm.topic}
+   360→                  onChange={(e) => updateField('topic', e.target.value)}
+   361→                />
+   362→                {errors.topic && <p className="text-xs text-destructive">{errors.topic}</p>}
+   363→              </div>
+   364→            </div>
+   365→            <DialogFooter>
+   366→              <Button variant="outline" onClick={() => setShowBookingDialog(false)}>
+   367→                Cancel
+   368→              </Button>
+   369→              <Button onClick={handleBookSession} className="gap-2">
+   370→                <CalendarPlus className="h-4 w-4" />
+   371→                Book Session
+   372→              </Button>
+   373→            </DialogFooter>
+   374→          </DialogContent>
+   375→        </Dialog>
+   376→      </div>
+   377→
+   378→      {/* Tabs: Upcoming / Past */}
+   379→      <Tabs defaultValue="upcoming">
+   380→        <TabsList>
+   381→          <TabsTrigger value="upcoming" className="gap-1.5">
+   382→            <CalendarClock className="h-3.5 w-3.5" />
+   383→            Upcoming
+   384→            {upcoming.length > 0 && (
+   385→              <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px]">
+   386→                {upcoming.length}
+   387→              </Badge>
+   388→            )}
+   389→          </TabsTrigger>
+   390→          <TabsTrigger value="past" className="gap-1.5">
+   391→            <BookOpen className="h-3.5 w-3.5" />
+   392→            Past
+   393→            {past.length > 0 && (
+   394→              <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px]">
+   395→                {past.length}
+   396→              </Badge>
+   397→            )}
+   398→          </TabsTrigger>
+   399→        </TabsList>
+   400→
+   401→        <TabsContent value="upcoming" className="mt-4">
+   402→          {upcoming.length === 0 ? (
+   403→            <Card className="border-dashed">
+   404→              <CardContent className="flex flex-col items-center justify-center py-10 text-center">
+   405→                <CalendarClock className="h-10 w-10 text-muted-foreground/50" />
+   406→                <h3 className="mt-3 text-sm font-semibold">No upcoming sessions</h3>
+   407→                <p className="mt-1 text-xs text-muted-foreground">
+   408→                  Book a mentorship session to get started.
+   409→                </p>
+   410→              </CardContent>
+   411→            </Card>
+   412→          ) : (
+   413→            <div className="space-y-3">{upcoming.map(renderSessionCard)}</div>
+   414→          )}
+   415→        </TabsContent>
+   416→
+   417→        <TabsContent value="past" className="mt-4">
+   418→          {past.length === 0 ? (
+   419→            <Card className="border-dashed">
+   420→              <CardContent className="flex flex-col items-center justify-center py-10 text-center">
+   421→                <BookOpen className="h-10 w-10 text-muted-foreground/50" />
+   422→                <h3 className="mt-3 text-sm font-semibold">No past sessions</h3>
+   423→                <p className="mt-1 text-xs text-muted-foreground">
+   424→                  Your completed and past mentorship sessions will appear here.
+   425→                </p>
+   426→              </CardContent>
+   427→            </Card>
+   428→          ) : (
+   429→            <div className="space-y-3">{past.map(renderSessionCard)}</div>
+   430→          )}
+   431→        </TabsContent>
+   432→      </Tabs>
+   433→    </div>
+   434→  )
+   435→}
+   436→
+   437→// ─── Alumni Mentorship View ────────────────────────────────────────────────────
+   438→
+   439→function AlumniMentorshipView() {
+   440→  const { mentorships, currentUser, updateMentorship, addToast, setLoading } = useAppStore()
+   441→
+   442→  const myMentorships = mentorships.filter((m) => m.mentorId === currentUser?.id)
+   443→
+   444→  const pending = myMentorships.filter((m) => m.status === 'PENDING')
+   445→  const active = myMentorships.filter(
+   446→    (m) => m.status === 'ACCEPTED' || m.status === 'COMPLETED'
+   447→  )
+   448→  const others = myMentorships.filter(
+   449→    (m) => m.status === 'REJECTED' || m.status === 'CANCELLED'
+   450→  )
+   451→
+   452→  const handleStatusUpdate = async (mentorshipId: string, status: string) => {
+   453→    setLoading(true)
+   454→    try {
+   455→      const body: Record<string, unknown> = { mentorshipId, status }
+   456→      const res = await fetch('/api/mentorships', {
+   457→        method: 'PUT',
+   458→        headers: { 'Content-Type': 'application/json' },
+   459→        body: JSON.stringify(body),
+   460→      })
+   461→
+   462→      if (!res.ok) {
+   463→        const err = await res.json()
+   464→        addToast(err.error || 'Failed to update session.', 'error')
+   465→        return
+   466→      }
+   467→
+   468→      updateMentorship(mentorshipId, { status })
+   469→      addToast(`Session ${status.toLowerCase()}.`, 'success')
+   470→    } catch {
+   471→      addToast('Something went wrong.', 'error')
+   472→    } finally {
+   473→      setLoading(false)
+   474→    }
+   475→  }
+   476→
+   477→  const renderRequestCard = (session: MentorshipType) => (
+   478→    <Card key={session.id} className="transition-all hover:shadow-sm">
+   479→      <CardContent className="p-4 sm:p-5">
+   480→        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+   481→          <div className="flex items-start gap-3 min-w-0 flex-1">
+   482→            <Avatar className="h-10 w-10">
+   483→              <AvatarFallback>{getInitials(session.menteeName || '?')}</AvatarFallback>
+   484→            </Avatar>
+   485→            <div className="min-w-0">
+   486→              <h3 className="font-semibold truncate">{session.menteeName || 'Student'}</h3>
+   487→              <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+   488→                <span className="flex items-center gap-1">
+   489→                  <CalendarDays className="h-3 w-3" />
+   490→                  {formatDate(session.date)}
+   491→                </span>
+   492→                <span className="flex items-center gap-1">
+   493→                  <Clock className="h-3 w-3" />
+   494→                  {session.timeSlot}
+   495→                </span>
+   496→                <span className="flex items-center gap-1">
+   497→                  <HourglassIcon className="h-3 w-3" />
+   498→                  {session.duration} min
+   499→                </span>
+   500→              </div>
+   501→              {session.topic && (
+   502→                <div className="mt-2 rounded-md bg-muted/50 px-3 py-2">
+   503→                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-0.5">
+   504→                    Topic
+   505→                  </p>
+   506→                  <p className="text-sm">{session.topic}</p>
+   507→                </div>
+   508→              )}
+   509→            </div>
+   510→          </div>
+   511→          <div className="flex flex-col items-end gap-2 shrink-0">
+   512→            <Badge className={statusColor(session.status)}>{session.status}</Badge>
+   513→            {session.status === 'PENDING' && (
+   514→              <div className="flex gap-2">
+   515→                <Button
+   516→                  size="sm"
+   517→                  className="gap-1 bg-emerald-600 hover:bg-emerald-700"
+   518→                  onClick={() => handleStatusUpdate(session.id, 'ACCEPTED')}
+   519→                >
+   520→                  <CheckCircle2 className="h-3.5 w-3.5" />
+   521→                  Accept
+   522→                </Button>
+   523→                <Button
+   524→                  size="sm"
+   525→                  variant="destructive"
+   526→                  className="gap-1"
+   527→                  onClick={() => handleStatusUpdate(session.id, 'REJECTED')}
+   528→                >
+   529→                  <XCircle className="h-3.5 w-3.5" />
+   530→                  Reject
+   531→                </Button>
+   532→              </div>
+   533→            )}
+   534→          </div>
+   535→        </div>
+   536→      </CardContent>
+   537→    </Card>
+   538→  )
+   539→
+   540→  return (
+   541→    <div className="space-y-6">
+   542→      {/* Header */}
+   543→      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+   544→        <div>
+   545→          <h1 className="text-2xl font-bold tracking-tight">Mentorship Requests</h1>
+   546→          <p className="text-sm text-muted-foreground">
+   547→            Manage mentorship sessions and help students with career guidance.
+   548→          </p>
+   549→        </div>
+   550→        <Button
+   551→          variant="outline"
+   552→          className="gap-2 bg-emerald-600 text-white hover:bg-emerald-700 hover:text-white"
+   553→        >
+   554→          <MessageSquare className="h-4 w-4" />
+   555→          Offer Mentorship Slot
+   556→        </Button>
+   557→      </div>
+   558→
+   559→      <Tabs defaultValue="pending">
+   560→        <TabsList>
+   561→          <TabsTrigger value="pending" className="gap-1.5">
+   562→            <HourglassIcon className="h-3.5 w-3.5" />
+   563→            Pending
+   564→            {pending.length > 0 && (
+   565→              <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px]">
+   566→                {pending.length}
+   567→              </Badge>
+   568→            )}
+   569→          </TabsTrigger>
+   570→          <TabsTrigger value="active" className="gap-1.5">
+   571→            <CheckCircle2 className="h-3.5 w-3.5" />
+   572→            Active / Completed
+   573→            {active.length > 0 && (
+   574→              <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px]">
+   575→                {active.length}
+   576→              </Badge>
+   577→            )}
+   578→          </TabsTrigger>
+   579→          <TabsTrigger value="other" className="gap-1.5">
+   580→            <XCircle className="h-3.5 w-3.5" />
+   581→            Rejected / Cancelled
+   582→            {others.length > 0 && (
+   583→              <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px]">
+   584→                {others.length}
+   585→              </Badge>
+   586→            )}
+   587→          </TabsTrigger>
+   588→        </TabsList>
+   589→
+   590→        <TabsContent value="pending" className="mt-4">
+   591→          {pending.length === 0 ? (
+   592→            <Card className="border-dashed">
+   593→              <CardContent className="flex flex-col items-center justify-center py-10 text-center">
+   594→                <HourglassIcon className="h-10 w-10 text-muted-foreground/50" />
+   595→                <h3 className="mt-3 text-sm font-semibold">No pending requests</h3>
+   596→                <p className="mt-1 text-xs text-muted-foreground">
+   597→                  New mentorship requests will appear here.
+   598→                </p>
+   599→              </CardContent>
+   600→            </Card>
+   601→          ) : (
+   602→            <div className="space-y-3">{pending.map(renderRequestCard)}</div>
+   603→          )}
+   604→        </TabsContent>
+   605→
+   606→        <TabsContent value="active" className="mt-4">
+   607→          {active.length === 0 ? (
+   608→            <Card className="border-dashed">
+   609→              <CardContent className="flex flex-col items-center justify-center py-10 text-center">
+   610→                <CheckCircle2 className="h-10 w-10 text-muted-foreground/50" />
+   611→                <h3 className="mt-3 text-sm font-semibold">No active sessions</h3>
+   612→                <p className="mt-1 text-xs text-muted-foreground">
+   613→                  Accepted and completed sessions will appear here.
+   614→                </p>
+   615→              </CardContent>
+   616→            </Card>
+   617→          ) : (
+   618→            <div className="space-y-3">{active.map(renderRequestCard)}</div>
+   619→          )}
+   620→        </TabsContent>
+   621→
+   622→        <TabsContent value="other" className="mt-4">
+   623→          {others.length === 0 ? (
+   624→            <Card className="border-dashed">
+   625→              <CardContent className="flex flex-col items-center justify-center py-10 text-center">
+   626→                <XCircle className="h-10 w-10 text-muted-foreground/50" />
+   627→                <h3 className="mt-3 text-sm font-semibold">No rejected sessions</h3>
+   628→                <p className="mt-1 text-xs text-muted-foreground">
+   629→                  Rejected or cancelled sessions will appear here.
+   630→                </p>
+   631→              </CardContent>
+   632→            </Card>
+   633→          ) : (
+   634→            <div className="space-y-3">{others.map(renderRequestCard)}</div>
+   635→          )}
+   636→        </TabsContent>
+   637→      </Tabs>
+   638→    </div>
+   639→  )
+   640→}
+   641→
+   642→// ─── Read-Only Mentorship View (Admin / Placement Cell) ────────────────────────
+   643→
+   644→function ReadOnlyMentorshipView() {
+   645→  const { mentorships } = useAppStore()
+   646→
+   647→  const stats = useMemo(() => {
+   648→    const total = mentorships.length
+   649→    const pending = mentorships.filter((m) => m.status === 'PENDING').length
+   650→    const accepted = mentorships.filter((m) => m.status === 'ACCEPTED').length
+   651→    const completed = mentorships.filter((m) => m.status === 'COMPLETED').length
+   652→    const rejected = mentorships.filter((m) => m.status === 'REJECTED').length
+   653→    return { total, pending, accepted, completed, rejected }
+   654→  }, [mentorships])
+   655→
+   656→  return (
+   657→    <div className="space-y-6">
+   658→      <div>
+   659→        <h1 className="text-2xl font-bold tracking-tight">Mentorship Overview</h1>
+   660→        <p className="text-sm text-muted-foreground">
+   661→          Summary of all mentorship sessions across the platform.
+   662→        </p>
+   663→      </div>
+   664→
+   665→      {/* Stats Grid */}
+   666→      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+   667→        <Card>
+   668→          <CardContent className="p-4 text-center">
+   669→            <p className="text-2xl font-bold">{stats.total}</p>
+   670→            <p className="text-xs text-muted-foreground">Total Sessions</p>
+   671→          </CardContent>
+   672→        </Card>
+   673→        <Card>
+   674→          <CardContent className="p-4 text-center">
+   675→            <p className="text-2xl font-bold text-amber-600">{stats.pending}</p>
+   676→            <p className="text-xs text-muted-foreground">Pending</p>
+   677→          </CardContent>
+   678→        </Card>
+   679→        <Card>
+   680→          <CardContent className="p-4 text-center">
+   681→            <p className="text-2xl font-bold text-blue-600">{stats.accepted}</p>
+   682→            <p className="text-xs text-muted-foreground">Accepted</p>
+   683→          </CardContent>
+   684→        </Card>
+   685→        <Card>
+   686→          <CardContent className="p-4 text-center">
+   687→            <p className="text-2xl font-bold text-emerald-600">{stats.completed}</p>
+   688→            <p className="text-xs text-muted-foreground">Completed</p>
+   689→          </CardContent>
+   690→        </Card>
+   691→        <Card>
+   692→          <CardContent className="p-4 text-center">
+   693→            <p className="text-2xl font-bold text-red-600">{stats.rejected}</p>
+   694→            <p className="text-xs text-muted-foreground">Rejected</p>
+   695→          </CardContent>
+   696→        </Card>
+   697→      </div>
+   698→
+   699→      {/* Session List */}
+   700→      {mentorships.length === 0 ? (
+   701→        <Card className="border-dashed">
+   702→          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+   703→            <Users className="h-12 w-12 text-muted-foreground/50" />
+   704→            <h3 className="mt-4 text-lg font-semibold">No mentorship sessions yet</h3>
+   705→            <p className="mt-1 text-sm text-muted-foreground">
+   706→              Mentorship sessions will appear here as students and alumni connect.
+   707→            </p>
+   708→          </CardContent>
+   709→        </Card>
+   710→      ) : (
+   711→        <div className="space-y-3">
+   712→          {mentorships.map((session) => (
+   713→            <Card key={session.id} className="transition-all hover:shadow-sm">
+   714→              <CardContent className="p-4 sm:p-5">
+   715→                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+   716→                  <div className="min-w-0 flex-1">
+   717→                    <div className="flex items-center gap-2 flex-wrap">
+   718→                      <h3 className="font-semibold">{session.topic || 'Mentorship Session'}</h3>
+   719→                      <Badge className={statusColor(session.status)}>{session.status}</Badge>
+   720→                    </div>
+   721→                    <p className="text-sm text-muted-foreground">
+   722→                      {session.menteeName || 'Student'} &rarr; {session.mentorName || 'Alumni'}
+   723→                    </p>
+   724→                    <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+   725→                      <span className="flex items-center gap-1">
+   726→                        <CalendarDays className="h-3 w-3" />
+   727→                        {formatDate(session.date)}
+   728→                      </span>
+   729→                      <span className="flex items-center gap-1">
+   730→                        <Clock className="h-3 w-3" />
+   731→                        {session.timeSlot}
+   732→                      </span>
+   733→                      <span className="flex items-center gap-1">
+   734→                        <HourglassIcon className="h-3 w-3" />
+   735→                        {session.duration} min
+   736→                      </span>
+   737→                    </div>
+   738→                  </div>
+   739→                </div>
+   740→              </CardContent>
+   741→            </Card>
+   742→          ))}
+   743→        </div>
+   744→      )}
+   745→    </div>
+   746→  )
+   747→}
+   748→
+   749→// ─── Alumni Directory ──────────────────────────────────────────────────────────
+   750→
+   751→function AlumniDirectory() {
+   752→  const { currentUser, setCurrentView } = useAppStore()
+   753→  const [alumniList, setAlumniList] = useState<User[]>([])
+   754→  const [search, setSearch] = useState('')
+   755→  const [loading, setLoading] = useState(true)
+   756→
+   757→  useEffect(() => {
+   758→    async function fetchAlumni() {
+   759→      setLoading(true)
+   760→      try {
+   761→        const res = await fetch('/api/auth?action=alumni')
+   762→        if (res.ok) {
+   763→          const data = await res.json()
+   764→          setAlumniList(data)
+   765→        }
+   766→      } catch {
+   767→        // Silent fail
+   768→      } finally {
+   769→        setLoading(false)
+   770→      }
+   771→    }
+   772→    fetchAlumni()
+   773→  }, [])
+   774→
+   775→  const filteredAlumni = useMemo(() => {
+   776→    if (!search.trim()) return alumniList
+   777→    const q = search.toLowerCase()
+   778→    return alumniList.filter(
+   779→      (a) =>
+   780→        a.name.toLowerCase().includes(q) ||
+   781→        a.designation?.toLowerCase().includes(q) ||
+   782→        a.company?.toLowerCase().includes(q) ||
+   783→        a.department?.toLowerCase().includes(q) ||
+   784→        a.skills?.toLowerCase().includes(q) ||
+   785→        a.location?.toLowerCase().includes(q)
+   786→    )
+   787→  }, [alumniList, search])
+   788→
+   789→  const handleRequestMentorship = (alumni: User) => {
+   790→    setCurrentView('mentorship')
+   791→    // The student mentorship view has its own booking dialog
+   792→    // The user can select this alumni from the mentor dropdown
+   793→  }
+   794→
+   795→  const isStudent = currentUser?.role === 'STUDENT'
+   796→
+   797→  if (loading) {
+   798→    return (
+   799→      <div className="space-y-6">
+   800→        <Skeleton className="h-8 w-48" />
+   801→        <Skeleton className="h-10 w-full max-w-md" />
+   802→        <div className="grid gap-4 md:grid-cols-2">
+   803→          {[...Array(4)].map((_, i) => (
+   804→            <Skeleton key={i} className="h-52 rounded-lg" />
+   805→          ))}
+   806→        </div>
+   807→      </div>
+   808→    )
+   809→  }
+   810→
+   811→  return (
+   812→    <div className="space-y-6">
+   813→      {/* Header */}
+   814→      <div>
+   815→        <h1 className="text-2xl font-bold tracking-tight">Alumni Directory</h1>
+   816→        <p className="text-sm text-muted-foreground">
+   817→          Browse and connect with verified alumni across industries.
+   818→        </p>
+   819→      </div>
+   820→
+   821→      {/* Search */}
+   822→      <div className="relative max-w-md">
+   823→        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+   824→        <Input
+   825→          placeholder="Search by name, company, skills, or location..."
+   826→          className="pl-10"
+   827→          value={search}
+   828→          onChange={(e) => setSearch(e.target.value)}
+   829→        />
+   830→      </div>
+   831→
+   832→      {/* Results Count */}
+   833→      <p className="text-sm text-muted-foreground">
+   834→        Showing {filteredAlumni.length} {filteredAlumni.length === 1 ? 'alumnus' : 'alumni'}
+   835→      </p>
+   836→
+   837→      {/* Alumni Grid */}
+   838→      {filteredAlumni.length === 0 ? (
+   839→        <Card className="border-dashed">
+   840→          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+   841→            <Users className="h-12 w-12 text-muted-foreground/50" />
+   842→            <h3 className="mt-4 text-lg font-semibold">No alumni found</h3>
+   843→            <p className="mt-1 text-sm text-muted-foreground">
+   844→              Try adjusting your search or check back later.
+   845→            </p>
+   846→          </CardContent>
+   847→        </Card>
+   848→      ) : (
+   849→        <div className="grid gap-4 md:grid-cols-2">
+   850→          {filteredAlumni.map((alumni) => (
+   851→            <Card
+   852→              key={alumni.id}
+   853→              className="transition-all hover:shadow-md hover:border-primary/30"
+   854→            >
+   855→              <CardContent className="p-5">
+   856→                <div className="flex items-start gap-4">
+   857→                  {/* Avatar */}
+   858→                  <div className="relative shrink-0">
+   859→                    <Avatar className="h-14 w-14">
+   860→                      <AvatarFallback className="text-lg">
+   861→                        {getInitials(alumni.name)}
+   862→                      </AvatarFallback>
+   863→                    </Avatar>
+   864→                    {alumni.isVerified && (
+   865→                      <div className="absolute -bottom-0.5 -right-0.5">
+   866→                        <div className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white">
+   867→                          <ShieldCheck className="h-3 w-3" />
+   868→                        </div>
+   869→                      </div>
+   870→                    )}
+   871→                  </div>
+   872→
+   873→                  {/* Info */}
+   874→                  <div className="min-w-0 flex-1">
+   875→                    <div className="flex items-center gap-2">
+   876→                      <h3 className="font-semibold truncate">{alumni.name}</h3>
+   877→                      {alumni.isVerified && (
+   878→                        <Badge variant="outline" className="text-emerald-600 border-emerald-300 text-[10px] px-1.5 py-0">
+   879→                          Verified
+   880→                        </Badge>
+   881→                      )}
+   882→                    </div>
+   883→
+   884→                    {alumni.designation && (
+   885→                      <p className="text-sm text-muted-foreground truncate">
+   886→                        {alumni.designation}
+   887→                      </p>
+   888→                    )}
+   889→
+   890→                    {alumni.company && (
+   891→                      <p className="text-sm text-muted-foreground flex items-center gap-1 truncate">
+   892→                        <Building2 className="h-3.5 w-3.5 shrink-0" />
+   893→                        {alumni.company}
+   894→                      </p>
+   895→                    )}
+   896→
+   897→                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+   898→                      {alumni.batch && (
+   899→                        <span className="flex items-center gap-1">
+   900→                          <GraduationCap className="h-3 w-3" />
+   901→                          Batch {alumni.batch}
+   902→                        </span>
+   903→                      )}
+   904→                      {alumni.department && (
+   905→                        <span className="flex items-center gap-1">
+   906→                          <BookOpen className="h-3 w-3" />
+   907→                          {alumni.department}
+   908→                        </span>
+   909→                      )}
+   910→                      {alumni.location && (
+   911→                        <span className="flex items-center gap-1">
+   912→                          <MapPin className="h-3 w-3" />
+   913→                          {alumni.location}
+   914→                        </span>
+   915→                      )}
+   916→                    </div>
+   917→
+   918→                    {/* Skills */}
+   919→                    {alumni.skills && (
+   920→                      <div className="mt-3 flex flex-wrap gap-1.5">
+   921→                        {alumni.skills
+   922→                          .split(',')
+   923→                          .slice(0, 5)
+   924→                          .map((skill) => (
+   925→                            <Badge
+   926→                              key={skill.trim()}
+   927→                              variant="outline"
+   928→                              className="text-[11px] font-normal px-2 py-0"
+   929→                            >
+   930→                              {skill.trim()}
+   931→                            </Badge>
+   932→                          ))}
+   933→                        {alumni.skills.split(',').length > 5 && (
+   934→                          <Badge variant="outline" className="text-[11px] font-normal px-2 py-0">
+   935→                            +{alumni.skills.split(',').length - 5} more
+   936→                          </Badge>
+   937→                        )}
+   938→                      </div>
+   939→                    )}
+   940→
+   941→                    {/* Action */}
+   942→                    {isStudent && (
+   943→                      <Button
+   944→                        size="sm"
+   945→                        variant="outline"
+   946→                        className="mt-3 gap-1.5"
+   947→                        onClick={() => handleRequestMentorship(alumni)}
+   948→                      >
+   949→                        <UserPlus className="h-3.5 w-3.5" />
+   950→                        Request Mentorship
+   951→                      </Button>
+   952→                    )}
+   953→                  </div>
+   954→                </div>
+   955→              </CardContent>
+   956→            </Card>
+   957→          ))}
+   958→        </div>
+   959→      )}
+   960→    </div>
+   961→  )
+   962→}
+   963→
+   964→// ─── Main Export ────────────────────────────────────────────────────────────────
+   965→
+   966→export function MentorshipView() {
+   967→  const { currentView, isLoading, currentUser } = useAppStore()
+   968→
+   969→  if (isLoading) {
+   970→    return (
+   971→      <div className="space-y-6">
+   972→        <Skeleton className="h-8 w-48" />
+   973→        <Skeleton className="h-10 w-full max-w-md" />
+   974→        <div className="grid gap-4 md:grid-cols-2">
+   975→          {[...Array(4)].map((_, i) => (
+   976→            <Skeleton key={i} className="h-48 rounded-lg" />
+   977→          ))}
+   978→        </div>
+   979→      </div>
+   980→    )
+   981→  }
+   982→
+   983→  if (currentView === 'alumni-directory') {
+   984→    return <AlumniDirectory />
+   985→  }
+   986→
+   987→  // Mentorship view based on role
+   988→  switch (currentUser?.role) {
+   989→    case 'STUDENT':
+   990→      return <StudentMentorshipView />
+   991→    case 'ALUMNI':
+   992→      return <AlumniMentorshipView />
+   993→    default:
+   994→      return <ReadOnlyMentorshipView />
+   995→  }
+   996→}
+   997→

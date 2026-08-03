@@ -1,0 +1,1370 @@
+     1→'use client'
+     2→
+     3→import { useState, useEffect, useMemo, useCallback } from 'react'
+     4→import { useAppStore, type Job, type Application } from '@/store/app-store'
+     5→import { Button } from '@/components/ui/button'
+     6→import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+     7→import { Input } from '@/components/ui/input'
+     8→import { Textarea } from '@/components/ui/textarea'
+     9→import { Label } from '@/components/ui/label'
+    10→import { Badge } from '@/components/ui/badge'
+    11→import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+    12→import {
+    13→  Dialog,
+    14→  DialogContent,
+    15→  DialogDescription,
+    16→  DialogFooter,
+    17→  DialogHeader,
+    18→  DialogTitle,
+    19→  DialogTrigger,
+    20→} from '@/components/ui/dialog'
+    21→import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+    22→import {
+    23→  Select,
+    24→  SelectContent,
+    25→  SelectItem,
+    26→  SelectTrigger,
+    27→  SelectValue,
+    28→} from '@/components/ui/select'
+    29→import { Skeleton } from '@/components/ui/skeleton'
+    30→import { Separator } from '@/components/ui/separator'
+    31→import {
+    32→  Search,
+    33→  MapPin,
+    34→  Briefcase,
+    35→  Clock,
+    36→  DollarSign,
+    37→  Users,
+    38→  CalendarDays,
+    39→  ArrowLeft,
+    40→  Plus,
+    41→  Pencil,
+    42→  Trash2,
+    43→  Eye,
+    44→  ChevronDown,
+    45→  ChevronUp,
+    46→  Send,
+    47→  UserSearch,
+    48→  Building2,
+    49→  GraduationCap,
+    50→  X,
+    51→  AlertCircle,
+    52→  CheckCircle2,
+    53→  XCircle,
+    54→  HourglassIcon,
+    55→  FileText,
+    56→} from 'lucide-react'
+    57→
+    58→// ─── Helpers ───────────────────────────────────────────────────────────────────
+    59→
+    60→const INDIAN_CITIES = [
+    61→  'Mumbai', 'Delhi', 'Bangalore', 'Hyderabad', 'Chennai', 'Pune',
+    62→  'Kolkata', 'Ahmedabad', 'Jaipur', 'Lucknow', 'Chandigarh', 'Kochi',
+    63→  'Coimbatore', 'Indore', 'Nagpur', 'Thiruvananthapuram', 'Bhopal',
+    64→  'Visakhapatnam', 'Surat', 'Vadodara', 'Noida', 'Gurgaon', 'Ghaziabad',
+    65→]
+    66→
+    67→const JOB_TYPES = ['Full-time', 'Internship', 'Part-time', 'Contract', 'Freelance']
+    68→
+    69→const TIME_SLOTS = ['10:00 AM', '11:00 AM', '12:00 PM', '2:00 PM', '3:00 PM', '4:00 PM', '5:00 PM']
+    70→
+    71→function formatSalary(min?: number | null, max?: number | null, currency?: string): string {
+    72→  if (!min && !max) return 'Not disclosed'
+    73→  const c = currency || 'INR'
+    74→  const fmt = (n: number) => `${(n / 100000).toFixed(n >= 100000 ? 1 : 0)}L`
+    75→  if (min && max) return `${c} ${fmt(min)} - ${fmt(max)}`
+    76→  if (min) return `From ${c} ${fmt(min)}`
+    77→  return `Up to ${c} ${fmt(max!)}`
+    78→}
+    79→
+    80→function formatDate(dateStr: string): string {
+    81→  return new Date(dateStr).toLocaleDateString('en-IN', {
+    82→    year: 'numeric',
+    83→    month: 'short',
+    84→    day: 'numeric',
+    85→  })
+    86→}
+    87→
+    88→function statusColor(status: string) {
+    89→  switch (status.toUpperCase()) {
+    90→    case 'ACCEPTED':
+    91→    case 'COMPLETED':
+    92→    case 'ACTIVE':
+    93→      return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-400'
+    94→    case 'PENDING':
+    95→    case 'REVIEWED':
+    96→      return 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-400'
+    97→    case 'REJECTED':
+    98→    case 'CLOSED':
+    99→      return 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-400'
+   100→    default:
+   101→      return 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'
+   102→  }
+   103→}
+   104→
+   105→function typeBadgeVariant(type: string) {
+   106→  switch (type.toLowerCase()) {
+   107→    case 'full-time': return 'default' as const
+   108→    case 'internship': return 'secondary' as const
+   109→    case 'part-time': return 'outline' as const
+   110→    default: return 'outline' as const
+   111→  }
+   112→}
+   113→
+   114→// ─── Jobs Listing ──────────────────────────────────────────────────────────────
+   115→
+   116→function JobsListing() {
+   117→  const { jobs, setJobs, currentUser, setCurrentView, setSelectedJobId } = useAppStore()
+   118→  const [search, setSearch] = useState('')
+   119→  const [typeFilter, setTypeFilter] = useState('All')
+   120→
+   121→  // Fetch jobs if store is empty
+   122→  useEffect(() => {
+   123→    if (jobs.length === 0) {
+   124→      fetch('/api/jobs')
+   125→        .then((r) => r.json())
+   126→        .then((data) => setJobs(data))
+   127→        .catch(() => {})
+   128→    }
+   129→  }, [jobs.length, setJobs])
+   130→
+   131→  const filteredJobs = useMemo(() => {
+   132→    let result = jobs.filter((j) => j.status === 'OPEN' || j.status === 'ACTIVE')
+   133→    if (typeFilter !== 'All') {
+   134→      result = result.filter(
+   135→        (j) => j.type.toLowerCase() === typeFilter.toLowerCase()
+   136→      )
+   137→    }
+   138→    if (search.trim()) {
+   139→      const q = search.toLowerCase()
+   140→      result = result.filter(
+   141→        (j) =>
+   142→          j.title.toLowerCase().includes(q) ||
+   143→          j.company.toLowerCase().includes(q) ||
+   144→          j.location.toLowerCase().includes(q)
+   145→      )
+   146→    }
+   147→    return result
+   148→  }, [jobs, search, typeFilter])
+   149→
+   150→  const canPostJob =
+   151→    currentUser?.role === 'RECRUITER' || currentUser?.role === 'ALUMNI'
+   152→
+   153→  return (
+   154→    <div className="space-y-6">
+   155→      {/* Header */}
+   156→      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+   157→        <div>
+   158→          <h1 className="text-2xl font-bold tracking-tight">Jobs Board</h1>
+   159→          <p className="text-sm text-muted-foreground">
+   160→            {filteredJobs.length} {filteredJobs.length === 1 ? 'opportunity' : 'opportunities'} available
+   161→          </p>
+   162→        </div>
+   163→        {canPostJob && (
+   164→          <Button
+   165→            onClick={() => setCurrentView('post-job')}
+   166→            className="gap-2"
+   167→          >
+   168→            <Plus className="h-4 w-4" />
+   169→            Post a Job
+   170→          </Button>
+   171→        )}
+   172→      </div>
+   173→
+   174→      {/* Search */}
+   175→      <div className="relative">
+   176→        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+   177→        <Input
+   178→          placeholder="Search by title, company, or location..."
+   179→          className="pl-10"
+   180→          value={search}
+   181→          onChange={(e) => setSearch(e.target.value)}
+   182→        />
+   183→      </div>
+   184→
+   185→      {/* Type Filter */}
+   186→      <Tabs value={typeFilter} onValueChange={setTypeFilter}>
+   187→        <TabsList className="w-full sm:w-auto">
+   188→          <TabsTrigger value="All">All</TabsTrigger>
+   189→          <TabsTrigger value="Full-time">Full-time</TabsTrigger>
+   190→          <TabsTrigger value="Internship">Internship</TabsTrigger>
+   191→          <TabsTrigger value="Part-time">Part-time</TabsTrigger>
+   192→        </TabsList>
+   193→      </Tabs>
+   194→
+   195→      {/* Job Grid */}
+   196→      {filteredJobs.length === 0 ? (
+   197→        <Card className="border-dashed">
+   198→          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+   199→            <Briefcase className="h-12 w-12 text-muted-foreground/50" />
+   200→            <h3 className="mt-4 text-lg font-semibold">No jobs found</h3>
+   201→            <p className="mt-1 text-sm text-muted-foreground">
+   202→              Try adjusting your search or filter criteria.
+   203→            </p>
+   204→          </CardContent>
+   205→        </Card>
+   206→      ) : (
+   207→        <div className="grid gap-4 md:grid-cols-2">
+   208→          {filteredJobs.map((job) => (
+   209→            <Card
+   210→              key={job.id}
+   211→              className="group cursor-pointer transition-all hover:shadow-md hover:border-primary/30"
+   212→              onClick={() => {
+   213→                setSelectedJobId(job.id)
+   214→                setCurrentView('job-detail')
+   215→              }}
+   216→            >
+   217→              <CardContent className="p-5">
+   218→                <div className="flex items-start justify-between gap-3">
+   219→                  <div className="min-w-0 flex-1">
+   220→                    <h3 className="font-semibold leading-tight group-hover:text-primary transition-colors truncate">
+   221→                      {job.title}
+   222→                    </h3>
+   223→                    <p className="mt-1 text-sm text-muted-foreground flex items-center gap-1.5">
+   224→                      <Building2 className="h-3.5 w-3.5 shrink-0" />
+   225→                      {job.company}
+   226→                    </p>
+   227→                  </div>
+   228→                  <Badge variant={typeBadgeVariant(job.type)} className="shrink-0">
+   229→                    {job.type}
+   230→                  </Badge>
+   231→                </div>
+   232→
+   233→                <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+   234→                  <span className="flex items-center gap-1">
+   235→                    <MapPin className="h-3 w-3" />
+   236→                    {job.location}
+   237→                  </span>
+   238→                  <span className="flex items-center gap-1">
+   239→                    <DollarSign className="h-3 w-3" />
+   240→                    {formatSalary(job.salaryMin, job.salaryMax, job.currency)}
+   241→                  </span>
+   242→                  <span className="flex items-center gap-1">
+   243→                    <Users className="h-3 w-3" />
+   244→                    {job.applicantsCount} {job.applicantsCount === 1 ? 'applicant' : 'applicants'}
+   245→                  </span>
+   246→                </div>
+   247→
+   248→                {job.skills && (
+   249→                  <div className="mt-3 flex flex-wrap gap-1.5">
+   250→                    {job.skills
+   251→                      .split(',')
+   252→                      .slice(0, 4)
+   253→                      .map((skill) => (
+   254→                        <Badge
+   255→                          key={skill.trim()}
+   256→                          variant="outline"
+   257→                          className="text-[11px] font-normal px-2 py-0"
+   258→                        >
+   259→                          {skill.trim()}
+   260→                        </Badge>
+   261→                      ))}
+   262→                    {job.skills.split(',').length > 4 && (
+   263→                      <Badge variant="outline" className="text-[11px] font-normal px-2 py-0">
+   264→                        +{job.skills.split(',').length - 4} more
+   265→                      </Badge>
+   266→                    )}
+   267→                  </div>
+   268→                )}
+   269→
+   270→                <div className="mt-3 flex items-center gap-1 text-[11px] text-muted-foreground">
+   271→                  <CalendarDays className="h-3 w-3" />
+   272→                  Posted {formatDate(job.createdAt)}
+   273→                </div>
+   274→              </CardContent>
+   275→            </Card>
+   276→          ))}
+   277→        </div>
+   278→      )}
+   279→    </div>
+   280→  )
+   281→}
+   282→
+   283→// ─── Job Detail ────────────────────────────────────────────────────────────────
+   284→
+   285→function JobDetail() {
+   286→  const { jobs, applications, currentUser, selectedJobId, setCurrentView, setSelectedJobId, addApplication, addToast, setLoading } = useAppStore()
+   287→  const [showApplyDialog, setShowApplyDialog] = useState(false)
+   288→  const [coverLetter, setCoverLetter] = useState('')
+   289→  const [applying, setApplying] = useState(false)
+   290→
+   291→  const job = jobs.find((j) => j.id === selectedJobId)
+   292→  const hasApplied = job
+   293→    ? applications.some((a) => a.jobId === job.id && a.userId === currentUser?.id)
+   294→    : false
+   295→
+   296→  const handleApply = async () => {
+   297→    if (!job || !currentUser) return
+   298→    if (!coverLetter.trim()) {
+   299→      addToast('Please write a cover letter to apply.', 'error')
+   300→      return
+   301→    }
+   302→    setApplying(true)
+   303→    setLoading(true)
+   304→    try {
+   305→      const res = await fetch('/api/applications', {
+   306→        method: 'POST',
+   307→        headers: { 'Content-Type': 'application/json' },
+   308→        body: JSON.stringify({
+   309→          userId: currentUser.id,
+   310→          jobId: job.id,
+   311→          coverLetter: coverLetter.trim(),
+   312→        }),
+   313→      })
+   314→      if (!res.ok) {
+   315→        const err = await res.json()
+   316→        addToast(err.error || 'Failed to submit application.', 'error')
+   317→        return
+   318→      }
+   319→      const newApp = await res.json()
+   320→      addApplication(newApp)
+   321→      setShowApplyDialog(false)
+   322→      setCoverLetter('')
+   323→      addToast('Application submitted successfully!', 'success')
+   324→    } catch {
+   325→      addToast('Something went wrong. Please try again.', 'error')
+   326→    } finally {
+   327→      setApplying(false)
+   328→      setLoading(false)
+   329→    }
+   330→  }
+   331→
+   332→  if (!job) {
+   333→    return (
+   334→      <div className="flex flex-col items-center justify-center py-20">
+   335→        <AlertCircle className="h-12 w-12 text-muted-foreground" />
+   336→        <h3 className="mt-4 text-lg font-semibold">Job not found</h3>
+   337→        <p className="mt-1 text-sm text-muted-foreground">This job may have been removed.</p>
+   338→        <Button variant="outline" className="mt-4 gap-2" onClick={() => setCurrentView('jobs')}>
+   339→          <ArrowLeft className="h-4 w-4" />
+   340→          Back to Jobs
+   341→        </Button>
+   342→      </div>
+   343→    )
+   344→  }
+   345→
+   346→  return (
+   347→    <div className="space-y-6">
+   348→      {/* Back button */}
+   349→      <Button
+   350→        variant="ghost"
+   351→        className="gap-2 -ml-2"
+   352→        onClick={() => {
+   353→          setSelectedJobId(null)
+   354→          setCurrentView('jobs')
+   355→        }}
+   356→      >
+   357→        <ArrowLeft className="h-4 w-4" />
+   358→        Back to Jobs
+   359→      </Button>
+   360→
+   361→      <Card>
+   362→        <CardContent className="p-6 space-y-6">
+   363→          {/* Title Row */}
+   364→          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+   365→            <div>
+   366→              <div className="flex items-center gap-2 flex-wrap">
+   367→                <h1 className="text-2xl font-bold tracking-tight">{job.title}</h1>
+   368→                <Badge variant={typeBadgeVariant(job.type)}>{job.type}</Badge>
+   369→                <Badge className={statusColor(job.status)}>{job.status}</Badge>
+   370→              </div>
+   371→              <p className="mt-1 text-muted-foreground">{job.company}</p>
+   372→            </div>
+   373→            {currentUser?.role === 'STUDENT' && (
+   374→              <Dialog open={showApplyDialog} onOpenChange={setShowApplyDialog}>
+   375→                <DialogTrigger asChild>
+   376→                  <Button disabled={hasApplied} className="gap-2 shrink-0">
+   377→                    <Send className="h-4 w-4" />
+   378→                    {hasApplied ? 'Already Applied' : 'Apply Now'}
+   379→                  </Button>
+   380→                </DialogTrigger>
+   381→                <DialogContent className="sm:max-w-lg">
+   382→                  <DialogHeader>
+   383→                    <DialogTitle>Apply for {job.title}</DialogTitle>
+   384→                    <DialogDescription>{job.company} &middot; {job.location}</DialogDescription>
+   385→                  </DialogHeader>
+   386→                  <div className="space-y-3">
+   387→                    <Label htmlFor="cover-letter">Cover Letter</Label>
+   388→                    <Textarea
+   389→                      id="cover-letter"
+   390→                      placeholder="Write a compelling cover letter explaining why you are a great fit for this role..."
+   391→                      rows={6}
+   392→                      value={coverLetter}
+   393→                      onChange={(e) => setCoverLetter(e.target.value)}
+   394→                    />
+   395→                  </div>
+   396→                  <DialogFooter>
+   397→                    <Button variant="outline" onClick={() => setShowApplyDialog(false)}>
+   398→                      Cancel
+   399→                    </Button>
+   400→                    <Button onClick={handleApply} disabled={applying || !coverLetter.trim()} className="gap-2">
+   401→                      {applying ? 'Submitting...' : 'Submit Application'}
+   402→                    </Button>
+   403→                  </DialogFooter>
+   404→                </DialogContent>
+   405→              </Dialog>
+   406→            )}
+   407→          </div>
+   408→
+   409→          <Separator />
+   410→
+   411→          {/* Meta Info */}
+   412→          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+   413→            <div className="flex items-center gap-2 text-sm">
+   414→              <MapPin className="h-4 w-4 text-muted-foreground" />
+   415→              <span>{job.location}</span>
+   416→            </div>
+   417→            <div className="flex items-center gap-2 text-sm">
+   418→              <DollarSign className="h-4 w-4 text-muted-foreground" />
+   419→              <span>{formatSalary(job.salaryMin, job.salaryMax, job.currency)}</span>
+   420→            </div>
+   421→            <div className="flex items-center gap-2 text-sm">
+   422→              <Users className="h-4 w-4 text-muted-foreground" />
+   423→              <span>{job.applicantsCount} {job.applicantsCount === 1 ? 'applicant' : 'applicants'}</span>
+   424→            </div>
+   425→            {job.deadline && (
+   426→              <div className="flex items-center gap-2 text-sm">
+   427→                <CalendarDays className="h-4 w-4 text-muted-foreground" />
+   428→                <span>Deadline: {formatDate(job.deadline)}</span>
+   429→              </div>
+   430→            )}
+   431→          </div>
+   432→
+   433→          {/* Description */}
+   434→          <div>
+   435→            <h2 className="text-lg font-semibold mb-2">Description</h2>
+   436→            <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line">
+   437→              {job.description}
+   438→            </p>
+   439→          </div>
+   440→
+   441→          {/* Requirements */}
+   442→          {job.requirements && (
+   443→            <div>
+   444→              <h2 className="text-lg font-semibold mb-2">Requirements</h2>
+   445→              <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line">
+   446→                {job.requirements}
+   447→              </p>
+   448→            </div>
+   449→          )}
+   450→
+   451→          {/* Skills */}
+   452→          {job.skills && (
+   453→            <div>
+   454→              <h2 className="text-lg font-semibold mb-2">Required Skills</h2>
+   455→              <div className="flex flex-wrap gap-2">
+   456→                {job.skills.split(',').map((skill) => (
+   457→                  <Badge key={skill.trim()} variant="outline">
+   458→                    {skill.trim()}
+   459→                  </Badge>
+   460→                ))}
+   461→              </div>
+   462→            </div>
+   463→          )}
+   464→
+   465→          {/* Experience */}
+   466→          {job.experienceRequired && (
+   467→            <div>
+   468→              <h2 className="text-lg font-semibold mb-2">Experience Required</h2>
+   469→              <p className="text-sm text-muted-foreground">{job.experienceRequired}</p>
+   470→            </div>
+   471→          )}
+   472→
+   473→          {/* Posted Info */}
+   474→          <Separator />
+   475→          <div className="flex items-center gap-4 text-xs text-muted-foreground">
+   476→            <span>Posted {formatDate(job.createdAt)}</span>
+   477→            {job.postedByName && <span>by {job.postedByName}</span>}
+   478→          </div>
+   479→        </CardContent>
+   480→      </Card>
+   481→    </div>
+   482→  )
+   483→}
+   484→
+   485→// ─── Post Job Form ─────────────────────────────────────────────────────────────
+   486→
+   487→function PostJobForm({ editJob }: { editJob?: Job | null }) {
+   488→  const { currentUser, setCurrentView, addJob, addToast, setLoading, jobs } = useAppStore()
+   489→
+   490→  const [form, setForm] = useState({
+   491→    title: '',
+   492→    company: '',
+   493→    location: '',
+   494→    type: '',
+   495→    salaryMin: '',
+   496→    salaryMax: '',
+   497→    description: '',
+   498→    requirements: '',
+   499→    skills: '',
+   500→    experienceRequired: '',
+   501→    deadline: '',
+   502→  })
+   503→  const [errors, setErrors] = useState<Record<string, string>>({})
+   504→
+   505→  useEffect(() => {
+   506→    if (editJob) {
+   507→      setForm({
+   508→        title: editJob.title,
+   509→        company: editJob.company,
+   510→        location: editJob.location,
+   511→        type: editJob.type,
+   512→        salaryMin: editJob.salaryMin?.toString() || '',
+   513→        salaryMax: editJob.salaryMax?.toString() || '',
+   514→        description: editJob.description,
+   515→        requirements: editJob.requirements,
+   516→        skills: editJob.skills || '',
+   517→        experienceRequired: editJob.experienceRequired || '',
+   518→        deadline: editJob.deadline || '',
+   519→      })
+   520→    }
+   521→  }, [editJob])
+   522→
+   523→  const updateField = (field: string, value: string) => {
+   524→    setForm((prev) => ({ ...prev, [field]: value }))
+   525→    if (errors[field]) {
+   526→      setErrors((prev) => {
+   527→        const next = { ...prev }
+   528→        delete next[field]
+   529→        return next
+   530→      })
+   531→    }
+   532→  }
+   533→
+   534→  const validate = () => {
+   535→    const errs: Record<string, string> = {}
+   536→    if (!form.title.trim()) errs.title = 'Job title is required'
+   537→    if (!form.company.trim()) errs.company = 'Company name is required'
+   538→    if (!form.location) errs.location = 'Location is required'
+   539→    if (!form.type) errs.type = 'Job type is required'
+   540→    if (!form.description.trim()) errs.description = 'Description is required'
+   541→    if (!form.requirements.trim()) errs.requirements = 'Requirements are required'
+   542→    if (form.salaryMin && isNaN(Number(form.salaryMin))) errs.salaryMin = 'Must be a number'
+   543→    if (form.salaryMax && isNaN(Number(form.salaryMax))) errs.salaryMax = 'Must be a number'
+   544→    setErrors(errs)
+   545→    return Object.keys(errs).length === 0
+   546→  }
+   547→
+   548→  const handleSubmit = async (e: React.FormEvent) => {
+   549→    e.preventDefault()
+   550→    if (!validate()) return
+   551→
+   552→    setLoading(true)
+   553→    try {
+   554→      const body: Record<string, unknown> = {
+   555→        title: form.title.trim(),
+   556→        company: form.company.trim(),
+   557→        location: form.location,
+   558→        type: form.type,
+   559→        salaryMin: form.salaryMin ? Number(form.salaryMin) : null,
+   560→        salaryMax: form.salaryMax ? Number(form.salaryMax) : null,
+   561→        description: form.description.trim(),
+   562→        requirements: form.requirements.trim(),
+   563→        skills: form.skills.trim() || null,
+   564→        experienceRequired: form.experienceRequired.trim() || null,
+   565→        postedById: currentUser?.id,
+   566→        deadline: form.deadline || null,
+   567→      }
+   568→
+   569→      let res: Response
+   570→      if (editJob) {
+   571→        body.jobId = editJob.id
+   572→        res = await fetch('/api/jobs', {
+   573→          method: 'PUT',
+   574→          headers: { 'Content-Type': 'application/json' },
+   575→          body: JSON.stringify(body),
+   576→        })
+   577→      } else {
+   578→        res = await fetch('/api/jobs', {
+   579→          method: 'POST',
+   580→          headers: { 'Content-Type': 'application/json' },
+   581→          body: JSON.stringify(body),
+   582→        })
+   583→      }
+   584→
+   585→      if (!res.ok) {
+   586→        const err = await res.json()
+   587→        addToast(err.error || 'Failed to save job.', 'error')
+   588→        return
+   589→      }
+   590→
+   591→      const savedJob = await res.json()
+   592→      if (!editJob) {
+   593→        addJob(savedJob)
+   594→      } else {
+   595→        // Update in store by refreshing
+   596→        const { setJobs } = useAppStore.getState()
+   597→        const updatedJobs = jobs.map((j) => (j.id === savedJob.id ? savedJob : j))
+   598→        setJobs(updatedJobs)
+   599→      }
+   600→
+   601→      addToast(editJob ? 'Job updated successfully!' : 'Job posted successfully!', 'success')
+   602→      setCurrentView(editJob ? 'manage-jobs' : 'jobs')
+   603→    } catch {
+   604→      addToast('Something went wrong. Please try again.', 'error')
+   605→    } finally {
+   606→      setLoading(false)
+   607→    }
+   608→  }
+   609→
+   610→  return (
+   611→    <div className="mx-auto max-w-2xl space-y-6">
+   612→      <div className="flex items-center gap-3">
+   613→        <Button variant="ghost" size="icon" onClick={() => setCurrentView(editJob ? 'manage-jobs' : 'jobs')}>
+   614→          <ArrowLeft className="h-4 w-4" />
+   615→        </Button>
+   616→        <div>
+   617→          <h1 className="text-2xl font-bold tracking-tight">
+   618→            {editJob ? 'Edit Job' : 'Post a New Job'}
+   619→          </h1>
+   620→          <p className="text-sm text-muted-foreground">
+   621→            {editJob ? 'Update the job details below' : 'Fill in the details to publish a new opportunity'}
+   622→          </p>
+   623→        </div>
+   624→      </div>
+   625→
+   626→      <form onSubmit={handleSubmit}>
+   627→        <Card>
+   628→          <CardContent className="p-6 space-y-5">
+   629→            {/* Title */}
+   630→            <div className="space-y-2">
+   631→              <Label htmlFor="job-title">Job Title *</Label>
+   632→              <Input
+   633→                id="job-title"
+   634→                placeholder="e.g. Senior Software Engineer"
+   635→                value={form.title}
+   636→                onChange={(e) => updateField('title', e.target.value)}
+   637→              />
+   638→              {errors.title && <p className="text-xs text-destructive">{errors.title}</p>}
+   639→            </div>
+   640→
+   641→            {/* Company */}
+   642→            <div className="space-y-2">
+   643→              <Label htmlFor="job-company">Company *</Label>
+   644→              <Input
+   645→                id="job-company"
+   646→                placeholder="e.g. Google India"
+   647→                value={form.company}
+   648→                onChange={(e) => updateField('company', e.target.value)}
+   649→              />
+   650→              {errors.company && <p className="text-xs text-destructive">{errors.company}</p>}
+   651→            </div>
+   652→
+   653→            {/* Location & Type */}
+   654→            <div className="grid gap-4 sm:grid-cols-2">
+   655→              <div className="space-y-2">
+   656→                <Label>Location *</Label>
+   657→                <Select value={form.location} onValueChange={(v) => updateField('location', v)}>
+   658→                  <SelectTrigger>
+   659→                    <SelectValue placeholder="Select city" />
+   660→                  </SelectTrigger>
+   661→                  <SelectContent>
+   662→                    {INDIAN_CITIES.map((city) => (
+   663→                      <SelectItem key={city} value={city}>
+   664→                        {city}
+   665→                      </SelectItem>
+   666→                    ))}
+   667→                  </SelectContent>
+   668→                </Select>
+   669→                {errors.location && <p className="text-xs text-destructive">{errors.location}</p>}
+   670→              </div>
+   671→              <div className="space-y-2">
+   672→                <Label>Job Type *</Label>
+   673→                <Select value={form.type} onValueChange={(v) => updateField('type', v)}>
+   674→                  <SelectTrigger>
+   675→                    <SelectValue placeholder="Select type" />
+   676→                  </SelectTrigger>
+   677→                  <SelectContent>
+   678→                    {JOB_TYPES.map((t) => (
+   679→                      <SelectItem key={t} value={t}>
+   680→                        {t}
+   681→                      </SelectItem>
+   682→                    ))}
+   683→                  </SelectContent>
+   684→                </Select>
+   685→                {errors.type && <p className="text-xs text-destructive">{errors.type}</p>}
+   686→              </div>
+   687→            </div>
+   688→
+   689→            {/* Salary */}
+   690→            <div className="grid gap-4 sm:grid-cols-2">
+   691→              <div className="space-y-2">
+   692→                <Label htmlFor="salary-min">Minimum Salary (INR)</Label>
+   693→                <Input
+   694→                  id="salary-min"
+   695→                  type="number"
+   696→                  placeholder="e.g. 600000"
+   697→                  value={form.salaryMin}
+   698→                  onChange={(e) => updateField('salaryMin', e.target.value)}
+   699→                />
+   700→                {errors.salaryMin && <p className="text-xs text-destructive">{errors.salaryMin}</p>}
+   701→              </div>
+   702→              <div className="space-y-2">
+   703→                <Label htmlFor="salary-max">Maximum Salary (INR)</Label>
+   704→                <Input
+   705→                  id="salary-max"
+   706→                  type="number"
+   707→                  placeholder="e.g. 1200000"
+   708→                  value={form.salaryMax}
+   709→                  onChange={(e) => updateField('salaryMax', e.target.value)}
+   710→                />
+   711→                {errors.salaryMax && <p className="text-xs text-destructive">{errors.salaryMax}</p>}
+   712→              </div>
+   713→            </div>
+   714→
+   715→            {/* Description */}
+   716→            <div className="space-y-2">
+   717→              <Label htmlFor="job-desc">Description *</Label>
+   718→              <Textarea
+   719→                id="job-desc"
+   720→                placeholder="Describe the role, responsibilities, and what the candidate will be working on..."
+   721→                rows={5}
+   722→                value={form.description}
+   723→                onChange={(e) => updateField('description', e.target.value)}
+   724→              />
+   725→              {errors.description && <p className="text-xs text-destructive">{errors.description}</p>}
+   726→            </div>
+   727→
+   728→            {/* Requirements */}
+   729→            <div className="space-y-2">
+   730→              <Label htmlFor="job-req">Requirements *</Label>
+   731→              <Textarea
+   732→                id="job-req"
+   733→                placeholder="List the key requirements and qualifications for this role..."
+   734→                rows={4}
+   735→                value={form.requirements}
+   736→                onChange={(e) => updateField('requirements', e.target.value)}
+   737→              />
+   738→              {errors.requirements && <p className="text-xs text-destructive">{errors.requirements}</p>}
+   739→            </div>
+   740→
+   741→            {/* Skills & Experience */}
+   742→            <div className="grid gap-4 sm:grid-cols-2">
+   743→              <div className="space-y-2">
+   744→                <Label htmlFor="job-skills">Skills (comma-separated)</Label>
+   745→                <Input
+   746→                  id="job-skills"
+   747→                  placeholder="e.g. React, Node.js, TypeScript"
+   748→                  value={form.skills}
+   749→                  onChange={(e) => updateField('skills', e.target.value)}
+   750→                />
+   751→              </div>
+   752→              <div className="space-y-2">
+   753→                <Label htmlFor="job-exp">Experience Required</Label>
+   754→                <Input
+   755→                  id="job-exp"
+   756→                  placeholder="e.g. 2-4 years"
+   757→                  value={form.experienceRequired}
+   758→                  onChange={(e) => updateField('experienceRequired', e.target.value)}
+   759→                />
+   760→              </div>
+   761→            </div>
+   762→
+   763→            {/* Deadline */}
+   764→            <div className="space-y-2">
+   765→              <Label htmlFor="job-deadline">Application Deadline</Label>
+   766→              <Input
+   767→                id="job-deadline"
+   768→                type="date"
+   769→                value={form.deadline}
+   770→                onChange={(e) => updateField('deadline', e.target.value)}
+   771→              />
+   772→            </div>
+   773→          </CardContent>
+   774→
+   775→          <div className="flex justify-end gap-3 border-t px-6 py-4">
+   776→            <Button
+   777→              type="button"
+   778→              variant="outline"
+   779→              onClick={() => setCurrentView(editJob ? 'manage-jobs' : 'jobs')}
+   780→            >
+   781→              Cancel
+   782→            </Button>
+   783→            <Button type="submit" className="gap-2">
+   784→              {editJob ? (
+   785→                <>
+   786→                  <Pencil className="h-4 w-4" />
+   787→                  Update Job
+   788→                </>
+   789→              ) : (
+   790→                <>
+   791→                  <Plus className="h-4 w-4" />
+   792→                  Post Job
+   793→                </>
+   794→              )}
+   795→            </Button>
+   796→          </div>
+   797→        </Card>
+   798→      </form>
+   799→    </div>
+   800→  )
+   801→}
+   802→
+   803→// ─── Manage Jobs ───────────────────────────────────────────────────────────────
+   804→
+   805→function ManageJobs() {
+   806→  const { jobs, currentUser, setCurrentView, setSelectedJobId, addToast, setLoading } = useAppStore()
+   807→  const [editingJob, setEditingJob] = useState<Job | null>(null)
+   808→
+   809→  const myJobs = jobs.filter((j) => j.postedById === currentUser?.id)
+   810→
+   811→  const handleDelete = async (jobId: string) => {
+   812→    setLoading(true)
+   813→    try {
+   814→      const res = await fetch(`/api/jobs?id=${jobId}`, { method: 'DELETE' })
+   815→      if (!res.ok) {
+   816→        const err = await res.json()
+   817→        addToast(err.error || 'Failed to delete job.', 'error')
+   818→        return
+   819→      }
+   820→      const { setJobs } = useAppStore.getState()
+   821→      setJobs(jobs.filter((j) => j.id !== jobId))
+   822→      addToast('Job deleted.', 'success')
+   823→    } catch {
+   824→      addToast('Something went wrong.', 'error')
+   825→    } finally {
+   826→      setLoading(false)
+   827→    }
+   828→  }
+   829→
+   830→  const handleToggleStatus = async (job: Job) => {
+   831→    setLoading(true)
+   832→    try {
+   833→      const newStatus = job.status === 'ACTIVE' ? 'CLOSED' : 'ACTIVE'
+   834→      const res = await fetch('/api/jobs', {
+   835→        method: 'PUT',
+   836→        headers: { 'Content-Type': 'application/json' },
+   837→        body: JSON.stringify({ jobId: job.id, status: newStatus }),
+   838→      })
+   839→      if (!res.ok) {
+   840→        const err = await res.json()
+   841→        addToast(err.error || 'Failed to update job.', 'error')
+   842→        return
+   843→      }
+   844→      const { setJobs } = useAppStore.getState()
+   845→      setJobs(jobs.map((j) => (j.id === job.id ? { ...j, status: newStatus } : j)))
+   846→      addToast(`Job ${newStatus === 'ACTIVE' ? 'reopened' : 'closed'}.`, 'success')
+   847→    } catch {
+   848→      addToast('Something went wrong.', 'error')
+   849→    } finally {
+   850→      setLoading(false)
+   851→    }
+   852→  }
+   853→
+   854→  if (editingJob) {
+   855→    return <PostJobForm editJob={editingJob} />
+   856→  }
+   857→
+   858→  return (
+   859→    <div className="space-y-6">
+   860→      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+   861→        <div>
+   862→          <h1 className="text-2xl font-bold tracking-tight">Manage Jobs</h1>
+   863→          <p className="text-sm text-muted-foreground">
+   864→            {myJobs.length} {myJobs.length === 1 ? 'job' : 'jobs'} posted by you
+   865→          </p>
+   866→        </div>
+   867→        <Button onClick={() => setCurrentView('post-job')} className="gap-2">
+   868→          <Plus className="h-4 w-4" />
+   869→          Post New Job
+   870→        </Button>
+   871→      </div>
+   872→
+   873→      {myJobs.length === 0 ? (
+   874→        <Card className="border-dashed">
+   875→          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+   876→            <Briefcase className="h-12 w-12 text-muted-foreground/50" />
+   877→            <h3 className="mt-4 text-lg font-semibold">No jobs posted yet</h3>
+   878→            <p className="mt-1 text-sm text-muted-foreground">
+   879→              Create your first job posting to start receiving applications.
+   880→            </p>
+   881→            <Button className="mt-4 gap-2" onClick={() => setCurrentView('post-job')}>
+   882→              <Plus className="h-4 w-4" />
+   883→              Post a Job
+   884→            </Button>
+   885→          </CardContent>
+   886→        </Card>
+   887→      ) : (
+   888→        <div className="space-y-3">
+   889→          {myJobs.map((job) => (
+   890→            <Card key={job.id} className="transition-all hover:shadow-sm">
+   891→              <CardContent className="p-4 sm:p-5">
+   892→                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+   893→                  <div className="min-w-0 flex-1">
+   894→                    <div className="flex items-center gap-2 flex-wrap">
+   895→                      <h3 className="font-semibold truncate">{job.title}</h3>
+   896→                      <Badge variant={typeBadgeVariant(job.type)}>{job.type}</Badge>
+   897→                      <Badge className={statusColor(job.status)}>{job.status}</Badge>
+   898→                    </div>
+   899→                    <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+   900→                      <span className="flex items-center gap-1">
+   901→                        <Building2 className="h-3 w-3" />
+   902→                        {job.company}
+   903→                      </span>
+   904→                      <span className="flex items-center gap-1">
+   905→                        <MapPin className="h-3 w-3" />
+   906→                        {job.location}
+   907→                      </span>
+   908→                      <span className="flex items-center gap-1">
+   909→                        <Users className="h-3 w-3" />
+   910→                        {job.applicantsCount} {job.applicantsCount === 1 ? 'applicant' : 'applicants'}
+   911→                      </span>
+   912→                    </div>
+   913→                  </div>
+   914→                  <div className="flex items-center gap-2 shrink-0">
+   915→                    <Button
+   916→                      size="sm"
+   917→                      variant="outline"
+   918→                      className="gap-1.5"
+   919→                      onClick={() => {
+   920→                        setSelectedJobId(job.id)
+   921→                        setCurrentView('applications')
+   922→                      }}
+   923→                    >
+   924→                      <Eye className="h-3.5 w-3.5" />
+   925→                      Applications
+   926→                    </Button>
+   927→                    <Button
+   928→                      size="sm"
+   929→                      variant="outline"
+   930→                      className="gap-1.5"
+   931→                      onClick={() => setEditingJob(job)}
+   932→                    >
+   933→                      <Pencil className="h-3.5 w-3.5" />
+   934→                      Edit
+   935→                    </Button>
+   936→                    <Button
+   937→                      size="sm"
+   938→                      variant="outline"
+   939→                      onClick={() => handleToggleStatus(job)}
+   940→                    >
+   941→                      {job.status === 'ACTIVE' ? 'Close' : 'Reopen'}
+   942→                    </Button>
+   943→                    <Button
+   944→                      size="sm"
+   945→                      variant="destructive"
+   946→                      className="gap-1.5"
+   947→                      onClick={() => handleDelete(job.id)}
+   948→                    >
+   949→                      <Trash2 className="h-3.5 w-3.5" />
+   950→                    </Button>
+   951→                  </div>
+   952→                </div>
+   953→              </CardContent>
+   954→            </Card>
+   955→          ))}
+   956→        </div>
+   957→      )}
+   958→    </div>
+   959→  )
+   960→}
+   961→
+   962→// ─── My Applications (Student) ─────────────────────────────────────────────────
+   963→
+   964→function MyApplications() {
+   965→  const { applications, currentUser, setCurrentView, setSelectedJobId } = useAppStore()
+   966→  const [expandedId, setExpandedId] = useState<string | null>(null)
+   967→
+   968→  const myApps = applications.filter((a) => a.userId === currentUser?.id)
+   969→
+   970→  const statusIcon = (status: string) => {
+   971→    switch (status.toUpperCase()) {
+   972→      case 'ACCEPTED': return <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+   973→      case 'REJECTED': return <XCircle className="h-4 w-4 text-red-500" />
+   974→      case 'REVIEWED': return <Eye className="h-4 w-4 text-amber-500" />
+   975→      default: return <HourglassIcon className="h-4 w-4 text-muted-foreground" />
+   976→    }
+   977→  }
+   978→
+   979→  if (myApps.length === 0) {
+   980→    return (
+   981→      <div className="space-y-6">
+   982→        <h1 className="text-2xl font-bold tracking-tight">My Applications</h1>
+   983→        <Card className="border-dashed">
+   984→          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+   985→            <FileText className="h-12 w-12 text-muted-foreground/50" />
+   986→            <h3 className="mt-4 text-lg font-semibold">No applications yet</h3>
+   987→            <p className="mt-1 text-sm text-muted-foreground">
+   988→              Browse available jobs and start applying to opportunities that match your skills.
+   989→            </p>
+   990→            <Button className="mt-4 gap-2" onClick={() => setCurrentView('jobs')}>
+   991→              <Briefcase className="h-4 w-4" />
+   992→              Browse Jobs
+   993→            </Button>
+   994→          </CardContent>
+   995→        </Card>
+   996→      </div>
+   997→    )
+   998→  }
+   999→
+  1000→  return (
+  1001→    <div className="space-y-6">
+  1002→      <div>
+  1003→        <h1 className="text-2xl font-bold tracking-tight">My Applications</h1>
+  1004→        <p className="text-sm text-muted-foreground">
+  1005→          Tracking {myApps.length} {myApps.length === 1 ? 'application' : 'applications'}
+  1006→        </p>
+  1007→      </div>
+  1008→
+  1009→      <div className="space-y-3">
+  1010→        {myApps.map((app) => (
+  1011→          <Card key={app.id} className="transition-all hover:shadow-sm">
+  1012→            <CardContent className="p-4 sm:p-5">
+  1013→              <div
+  1014→                className="cursor-pointer"
+  1015→                onClick={() =>
+  1016→                  setExpandedId((prev) => (prev === app.id ? null : app.id))
+  1017→                }
+  1018→              >
+  1019→                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+  1020→                  <div className="flex items-start gap-3 min-w-0 flex-1">
+  1021→                    {statusIcon(app.status)}
+  1022→                    <div className="min-w-0">
+  1023→                      <h3
+  1024→                        className="font-semibold hover:text-primary transition-colors cursor-pointer"
+  1025→                        onClick={(e) => {
+  1026→                          e.stopPropagation()
+  1027→                          if (app.jobId) {
+  1028→                            setSelectedJobId(app.jobId)
+  1029→                            setCurrentView('job-detail')
+  1030→                          }
+  1031→                        }}
+  1032→                      >
+  1033→                        {app.jobTitle || 'Untitled Job'}
+  1034→                      </h3>
+  1035→                      <p className="text-sm text-muted-foreground">
+  1036→                        {app.companyName} &middot; Applied {formatDate(app.createdAt)}
+  1037→                      </p>
+  1038→                    </div>
+  1039→                  </div>
+  1040→                  <div className="flex items-center gap-3">
+  1041→                    <Badge className={statusColor(app.status)}>{app.status}</Badge>
+  1042→                    {expandedId === app.id ? (
+  1043→                      <ChevronUp className="h-4 w-4 text-muted-foreground" />
+  1044→                    ) : (
+  1045→                      <ChevronDown className="h-4 w-4 text-muted-foreground" />
+  1046→                    )}
+  1047→                  </div>
+  1048→                </div>
+  1049→
+  1050→                {/* Expanded Cover Letter */}
+  1051→                {expandedId === app.id && app.coverLetter && (
+  1052→                  <div className="mt-4 rounded-md bg-muted/50 p-4">
+  1053→                    <p className="text-xs font-medium text-muted-foreground mb-1.5 uppercase tracking-wider">
+  1054→                      Cover Letter
+  1055→                    </p>
+  1056→                    <p className="text-sm leading-relaxed whitespace-pre-line">
+  1057→                      {app.coverLetter}
+  1058→                    </p>
+  1059→                  </div>
+  1060→                )}
+  1061→              </div>
+  1062→            </CardContent>
+  1063→          </Card>
+  1064→        ))}
+  1065→      </div>
+  1066→    </div>
+  1067→  )
+  1068→}
+  1069→
+  1070→// ─── Received Applications (Recruiter) ─────────────────────────────────────────
+  1071→
+  1072→function ReceivedApplications() {
+  1073→  const { applications, currentUser, updateApplication, addToast, setLoading, jobs, setCurrentView, setSelectedJobId } = useAppStore()
+  1074→
+  1075→  const myJobs = jobs.filter((j) => j.postedById === currentUser?.id)
+  1076→  const myJobIds = new Set(myJobs.map((j) => j.id))
+  1077→  const receivedApps = applications.filter((a) => myJobIds.has(a.jobId))
+  1078→
+  1079→  const handleStatusUpdate = async (applicationId: string, status: string) => {
+  1080→    setLoading(true)
+  1081→    try {
+  1082→      const res = await fetch('/api/applications', {
+  1083→        method: 'PUT',
+  1084→        headers: { 'Content-Type': 'application/json' },
+  1085→        body: JSON.stringify({ applicationId, status }),
+  1086→      })
+  1087→      if (!res.ok) {
+  1088→        const err = await res.json()
+  1089→        addToast(err.error || 'Failed to update application.', 'error')
+  1090→        return
+  1091→      }
+  1092→      updateApplication(applicationId, { status })
+  1093→      addToast(`Application ${status.toLowerCase()}.`, 'success')
+  1094→    } catch {
+  1095→      addToast('Something went wrong.', 'error')
+  1096→    } finally {
+  1097→      setLoading(false)
+  1098→    }
+  1099→  }
+  1100→
+  1101→  if (receivedApps.length === 0) {
+  1102→    return (
+  1103→      <div className="space-y-6">
+  1104→        <h1 className="text-2xl font-bold tracking-tight">Received Applications</h1>
+  1105→        <Card className="border-dashed">
+  1106→          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+  1107→            <Users className="h-12 w-12 text-muted-foreground/50" />
+  1108→            <h3 className="mt-4 text-lg font-semibold">No applications received</h3>
+  1109→            <p className="mt-1 text-sm text-muted-foreground">
+  1110→              Applications from candidates will appear here once they start applying to your jobs.
+  1111→            </p>
+  1112→          </CardContent>
+  1113→        </Card>
+  1114→      </div>
+  1115→    )
+  1116→  }
+  1117→
+  1118→  return (
+  1119→    <div className="space-y-6">
+  1120→      <div className="flex items-center justify-between">
+  1121→        <div>
+  1122→          <h1 className="text-2xl font-bold tracking-tight">Received Applications</h1>
+  1123→          <p className="text-sm text-muted-foreground">
+  1124→            {receivedApps.length} {receivedApps.length === 1 ? 'application' : 'applications'} to review
+  1125→          </p>
+  1126→        </div>
+  1127→        <Button variant="outline" className="gap-2" onClick={() => setCurrentView('manage-jobs')}>
+  1128→          <Briefcase className="h-4 w-4" />
+  1129→          Manage Jobs
+  1130→        </Button>
+  1131→      </div>
+  1132→
+  1133→      <div className="space-y-3">
+  1134→        {receivedApps.map((app) => (
+  1135→          <Card key={app.id} className="transition-all hover:shadow-sm">
+  1136→            <CardContent className="p-4 sm:p-5">
+  1137→              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+  1138→                <div className="flex items-start gap-3 min-w-0 flex-1">
+  1139→                  <Avatar className="h-10 w-10">
+  1140→                    <AvatarFallback>
+  1141→                      {app.userName
+  1142→                        ?.split(' ')
+  1143→                        .map((n) => n[0])
+  1144→                        .join('')
+  1145→                        .toUpperCase()
+  1146→                        .slice(0, 2) || '?'}
+  1147→                    </AvatarFallback>
+  1148→                  </Avatar>
+  1149→                  <div className="min-w-0">
+  1150→                    <h3 className="font-semibold truncate">{app.userName || 'Unknown Candidate'}</h3>
+  1151→                    <p className="text-sm text-muted-foreground truncate">{app.userEmail || ''}</p>
+  1152→                    <p className="mt-1 text-xs text-muted-foreground">
+  1153→                      Applied for{' '}
+  1154→                      <span
+  1155→                        className="font-medium text-foreground hover:text-primary cursor-pointer"
+  1156→                        onClick={() => {
+  1157→                          setSelectedJobId(app.jobId)
+  1158→                          setCurrentView('job-detail')
+  1159→                        }}
+  1160→                      >
+  1161→                        {app.jobTitle || 'this job'}
+  1162→                      </span>
+  1163→                      {' '}at {app.companyName}
+  1164→                    </p>
+  1165→                    <p className="text-xs text-muted-foreground mt-0.5">
+  1166→                      {formatDate(app.createdAt)}
+  1167→                    </p>
+  1168→                    {app.coverLetter && (
+  1169→                      <p className="mt-2 text-sm text-muted-foreground line-clamp-2">
+  1170→                        {app.coverLetter}
+  1171→                      </p>
+  1172→                    )}
+  1173→                  </div>
+  1174→                </div>
+  1175→                <div className="flex flex-col items-end gap-2 shrink-0">
+  1176→                  <Badge className={statusColor(app.status)}>{app.status}</Badge>
+  1177→                  {app.status === 'PENDING' && (
+  1178→                    <div className="flex gap-2">
+  1179→                      <Button
+  1180→                        size="sm"
+  1181→                        className="gap-1 bg-emerald-600 hover:bg-emerald-700"
+  1182→                        onClick={() => handleStatusUpdate(app.id, 'ACCEPTED')}
+  1183→                      >
+  1184→                        <CheckCircle2 className="h-3.5 w-3.5" />
+  1185→                        Accept
+  1186→                      </Button>
+  1187→                      <Button
+  1188→                        size="sm"
+  1189→                        variant="destructive"
+  1190→                        className="gap-1"
+  1191→                        onClick={() => handleStatusUpdate(app.id, 'REJECTED')}
+  1192→                      >
+  1193→                        <XCircle className="h-3.5 w-3.5" />
+  1194→                        Reject
+  1195→                      </Button>
+  1196→                    </div>
+  1197→                  )}
+  1198→                </div>
+  1199→              </div>
+  1200→            </CardContent>
+  1201→          </Card>
+  1202→        ))}
+  1203→      </div>
+  1204→    </div>
+  1205→  )
+  1206→}
+  1207→
+  1208→// ─── Candidate Search ──────────────────────────────────────────────────────────
+  1209→
+  1210→function CandidateSearch() {
+  1211→  const { users, setSelectedUserId, setCurrentView } = useAppStore()
+  1212→  const [search, setSearch] = useState('')
+  1213→
+  1214→  const students = useMemo(() => {
+  1215→    let result = users.filter((u) => u.role === 'STUDENT')
+  1216→    if (search.trim()) {
+  1217→      const q = search.toLowerCase()
+  1218→      result = result.filter(
+  1219→        (u) =>
+  1220→          u.name.toLowerCase().includes(q) ||
+  1221→          u.department?.toLowerCase().includes(q) ||
+  1222→          u.skills?.toLowerCase().includes(q)
+  1223→      )
+  1224→    }
+  1225→    return result
+  1226→  }, [users, search])
+  1227→
+  1228→  return (
+  1229→    <div className="space-y-6">
+  1230→      <div>
+  1231→        <h1 className="text-2xl font-bold tracking-tight">Candidate Search</h1>
+  1232→        <p className="text-sm text-muted-foreground">
+  1233→          Find and connect with talented students from the alumni network.
+  1234→        </p>
+  1235→      </div>
+  1236→
+  1237→      {/* Search */}
+  1238→      <div className="relative max-w-md">
+  1239→        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+  1240→        <Input
+  1241→          placeholder="Search by name, department, or skills..."
+  1242→          className="pl-10"
+  1243→          value={search}
+  1244→          onChange={(e) => setSearch(e.target.value)}
+  1245→        />
+  1246→      </div>
+  1247→
+  1248→      {students.length === 0 ? (
+  1249→        <Card className="border-dashed">
+  1250→          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+  1251→            <UserSearch className="h-12 w-12 text-muted-foreground/50" />
+  1252→            <h3 className="mt-4 text-lg font-semibold">No candidates found</h3>
+  1253→            <p className="mt-1 text-sm text-muted-foreground">
+  1254→              Try adjusting your search criteria.
+  1255→            </p>
+  1256→          </CardContent>
+  1257→        </Card>
+  1258→      ) : (
+  1259→        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+  1260→          {students.map((student) => (
+  1261→            <Card
+  1262→              key={student.id}
+  1263→              className="cursor-pointer transition-all hover:shadow-md hover:border-primary/30"
+  1264→              onClick={() => {
+  1265→                setSelectedUserId(student.id)
+  1266→                setCurrentView('profile')
+  1267→              }}
+  1268→            >
+  1269→              <CardContent className="p-5">
+  1270→                <div className="flex items-center gap-3">
+  1271→                  <Avatar className="h-11 w-11">
+  1272→                    <AvatarFallback>
+  1273→                      {student.name
+  1274→                        .split(' ')
+  1275→                        .map((n) => n[0])
+  1276→                        .join('')
+  1277→                        .toUpperCase()
+  1278→                        .slice(0, 2)}
+  1279→                    </AvatarFallback>
+  1280→                  </Avatar>
+  1281→                  <div className="min-w-0">
+  1282→                    <h3 className="font-semibold truncate">{student.name}</h3>
+  1283→                    {student.department && (
+  1284→                      <p className="text-sm text-muted-foreground flex items-center gap-1">
+  1285→                        <GraduationCap className="h-3.5 w-3.5" />
+  1286→                        {student.department}
+  1287→                      </p>
+  1288→                    )}
+  1289→                  </div>
+  1290→                </div>
+  1291→
+  1292→                {student.skills && (
+  1293→                  <div className="mt-3 flex flex-wrap gap-1.5">
+  1294→                    {student.skills
+  1295→                      .split(',')
+  1296→                      .slice(0, 5)
+  1297→                      .map((skill) => (
+  1298→                        <Badge
+  1299→                          key={skill.trim()}
+  1300→                          variant="outline"
+  1301→                          className="text-[11px] font-normal px-2 py-0"
+  1302→                        >
+  1303→                          {skill.trim()}
+  1304→                        </Badge>
+  1305→                      ))}
+  1306→                  </div>
+  1307→                )}
+  1308→
+  1309→                {student.gpa && (
+  1310→                  <div className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
+  1311→                    <span className="font-medium">GPA:</span>
+  1312→                    <span>{student.gpa.toFixed(1)}</span>
+  1313→                  </div>
+  1314→                )}
+  1315→
+  1316→                {student.batch && (
+  1317→                  <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+  1318→                    <span className="font-medium">Batch:</span>
+  1319→                    <span>{student.batch}</span>
+  1320→                  </div>
+  1321→                )}
+  1322→              </CardContent>
+  1323→            </Card>
+  1324→          ))}
+  1325→        </div>
+  1326→      )}
+  1327→    </div>
+  1328→  )
+  1329→}
+  1330→
+  1331→// ─── Main Export ────────────────────────────────────────────────────────────────
+  1332→
+  1333→export function JobsView() {
+  1334→  const { currentView, isLoading, currentUser } = useAppStore()
+  1335→
+  1336→  if (isLoading) {
+  1337→    return (
+  1338→      <div className="space-y-6">
+  1339→        <Skeleton className="h-8 w-48" />
+  1340→        <Skeleton className="h-10 w-full" />
+  1341→        <div className="grid gap-4 md:grid-cols-2">
+  1342→          {[...Array(4)].map((_, i) => (
+  1343→            <Skeleton key={i} className="h-40 rounded-lg" />
+  1344→          ))}
+  1345→        </div>
+  1346→      </div>
+  1347→    )
+  1348→  }
+  1349→
+  1350→  switch (currentView) {
+  1351→    case 'jobs':
+  1352→      return <JobsListing />
+  1353→    case 'job-detail':
+  1354→      return <JobDetail />
+  1355→    case 'post-job':
+  1356→      return <PostJobForm />
+  1357→    case 'manage-jobs':
+  1358→      return <ManageJobs />
+  1359→    case 'applications':
+  1360→      if (currentUser?.role === 'RECRUITER') {
+  1361→        return <ReceivedApplications />
+  1362→      }
+  1363→      return <MyApplications />
+  1364→    case 'candidate-search':
+  1365→      return <CandidateSearch />
+  1366→    default:
+  1367→      return <JobsListing />
+  1368→  }
+  1369→}
+  1370→

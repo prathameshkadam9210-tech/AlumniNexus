@@ -102,7 +102,7 @@ const VIEW_LABELS: Record<ViewName, string> = {
 }
 
 // Dynamic view component that loads the real module or shows a loading spinner
-function DynamicView({ name, importFn }: { name: string; importFn: () => Promise<{ [key: string]: React.ComponentType }> }) {
+function DynamicView({ name, importFn, view }: { name: string; importFn: () => Promise<{ [key: string]: React.ComponentType }>; view?: string }) {
   const [ViewComponent, setViewComponent] = useState<React.ComponentType | null>(null)
   const [loaded, setLoaded] = useState(false)
 
@@ -151,6 +151,10 @@ function DynamicView({ name, importFn }: { name: string; importFn: () => Promise
     )
   }
 
+  // If view prop is provided, pass it to the component (e.g. ProfileView needs view='resume-builder')
+  if (view) {
+    return <ViewComponent view={view} />
+  }
   return <ViewComponent />
 }
 
@@ -193,7 +197,7 @@ function ViewRouter() {
     case 'alumni-directory':
       return <DynamicView name="Alumni Directory" importFn={() => import('@/components/portal/mentorship')} />
     case 'resume-builder':
-      return <DynamicView name="Resume Builder" importFn={() => import('@/components/portal/profile')} />
+      return <DynamicView name="Resume Builder" importFn={() => import('@/components/portal/profile')} view="resume-builder" />
     default:
       return <DynamicView name={VIEW_LABELS[currentView] || currentView} importFn={() => import('@/components/portal/dashboard')} />
   }

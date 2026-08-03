@@ -1,0 +1,713 @@
+     1→'use client'
+     2→
+     3→import React, { useState, useEffect, useMemo } from 'react'
+     4→import { useAppStore, type EventItem, type NotificationItem } from '@/store/app-store'
+     5→import { Button } from '@/components/ui/button'
+     6→import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+     7→import { Input } from '@/components/ui/input'
+     8→import { Textarea } from '@/components/ui/textarea'
+     9→import { Badge } from '@/components/ui/badge'
+    10→import { Label } from '@/components/ui/label'
+    11→import { Progress } from '@/components/ui/progress'
+    12→import { Skeleton } from '@/components/ui/skeleton'
+    13→import { Separator } from '@/components/ui/separator'
+    14→import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+    15→import { ScrollArea } from '@/components/ui/scroll-area'
+    16→import {
+    17→  Select,
+    18→  SelectContent,
+    19→  SelectItem,
+    20→  SelectTrigger,
+    21→  SelectValue,
+    22→} from '@/components/ui/select'
+    23→import {
+    24→  Dialog,
+    25→  DialogContent,
+    26→  DialogHeader,
+    27→  DialogTitle,
+    28→  DialogDescription,
+    29→  DialogFooter,
+    30→} from '@/components/ui/dialog'
+    31→import {
+    32→  Calendar,
+    33→  Clock,
+    34→  MapPin,
+    35→  Users,
+    36→  Plus,
+    37→  Bell,
+    38→  CheckCircle2,
+    39→  Info,
+    40→  AlertCircle,
+    41→  Star,
+    42→  Trophy,
+    43→  Monitor,
+    44→  Presentation,
+    45→  Video,
+    46→  Briefcase,
+    47→  CheckCheck,
+    48→  Megaphone,
+    49→} from 'lucide-react'
+    50→
+    51→// ============================================================
+    52→// Helpers
+    53→// ============================================================
+    54→
+    55→function formatDate(dateStr: string): string {
+    56→  const date = new Date(dateStr)
+    57→  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    58→}
+    59→
+    60→function getTimeAgo(dateStr: string): string {
+    61→  const now = Date.now()
+    62→  const then = new Date(dateStr).getTime()
+    63→  const diffMs = now - then
+    64→  const diffMin = Math.floor(diffMs / 60000)
+    65→  const diffHr = Math.floor(diffMs / 3600000)
+    66→  const diffDay = Math.floor(diffMs / 86400000)
+    67→
+    68→  if (diffMin < 1) return 'Just now'
+    69→  if (diffMin < 60) return `${diffMin}m ago`
+    70→  if (diffHr < 24) return `${diffHr}h ago`
+    71→  if (diffDay < 7) return `${diffDay}d ago`
+    72→  return formatDate(dateStr)
+    73→}
+    74→
+    75→function EventTypeIcon({ type, className }: { type: string; className?: string }) {
+    76→  const cls = className || 'h-3 w-3'
+    77→  switch (type.toLowerCase()) {
+    78→    case 'workshop': return <Trophy className={cls} />
+    79→    case 'campus_drive': return <Briefcase className={cls} />
+    80→    case 'seminar': return <Presentation className={cls} />
+    81→    case 'webinar': return <Video className={cls} />
+    82→    default: return <Calendar className={cls} />
+    83→  }
+    84→}
+    85→
+    86→function getEventTypeColor(type: string): string {
+    87→  switch (type.toLowerCase()) {
+    88→    case 'workshop': return 'bg-amber-100 text-amber-800 border-amber-200'
+    89→    case 'campus_drive': return 'bg-emerald-100 text-emerald-800 border-emerald-200'
+    90→    case 'seminar': return 'bg-violet-100 text-violet-800 border-violet-200'
+    91→    case 'webinar': return 'bg-sky-100 text-sky-800 border-sky-200'
+    92→    default: return 'bg-muted text-muted-foreground'
+    93→  }
+    94→}
+    95→
+    96→function NotificationIcon({ type, className }: { type: string; className?: string }) {
+    97→  const cls = className || 'h-5 w-5'
+    98→  switch (type.toUpperCase()) {
+    99→    case 'INFO': return <Info className={cls} />
+   100→    case 'SUCCESS': return <CheckCircle2 className={cls} />
+   101→    case 'REMINDER': return <Bell className={cls} />
+   102→    case 'ERROR': return <AlertCircle className={cls} />
+   103→    default: return <Bell className={cls} />
+   104→  }
+   105→}
+   106→
+   107→function getNotificationColor(type: string): string {
+   108→  switch (type.toUpperCase()) {
+   109→    case 'INFO': return 'text-blue-500'
+   110→    case 'SUCCESS': return 'text-emerald-500'
+   111→    case 'REMINDER': return 'text-amber-500'
+   112→    case 'ERROR': return 'text-red-500'
+   113→    default: return 'text-muted-foreground'
+   114→  }
+   115→}
+   116→
+   117→// ============================================================
+   118→// Event Card
+   119→// ============================================================
+   120→
+   121→function EventCard({ event, onRegister, canRegister }: { event: EventItem; onRegister: (id: string) => void; canRegister: boolean }) {
+   122→  const typeColor = getEventTypeColor(event.type)
+   123→  const capacityPercent = event.maxAttendees ? Math.min((event.currentAttendees / event.maxAttendees) * 100, 100) : 0
+   124→  const isFull = event.maxAttendees ? event.currentAttendees >= event.maxAttendees : false
+   125→
+   126→  return (
+   127→    <Card className="group overflow-hidden hover:shadow-md transition-shadow">
+   128→      {event.isFeatured && (
+   129→        <div className="bg-gradient-to-r from-primary/10 to-primary/5 px-4 py-1.5 flex items-center gap-1.5">
+   130→          <Star className="h-3.5 w-3.5 text-primary fill-primary" />
+   131→          <span className="text-xs font-medium text-primary">Featured Event</span>
+   132→        </div>
+   133→      )}
+   134→      <CardContent className="p-4">
+   135→        <div className="flex items-start justify-between gap-3 mb-3">
+   136→          <div className="flex-1 min-w-0">
+   137→            <h3 className="font-semibold text-base leading-tight line-clamp-2">{event.title}</h3>
+   138→            {event.organizerName && (
+   139→              <p className="text-xs text-muted-foreground mt-1">Organized by {event.organizerName}</p>
+   140→            )}
+   141→          </div>
+   142→          <Badge variant="outline" className={`${typeColor} flex-shrink-0 gap-1 text-xs`}>
+   143→            <EventTypeIcon type={event.type} className="h-3 w-3" />
+   144→            {event.type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+   145→          </Badge>
+   146→        </div>
+   147→
+   148→        <p className="text-sm text-muted-foreground line-clamp-2 mb-3">{event.description}</p>
+   149→
+   150→        <div className="space-y-1.5 text-sm text-muted-foreground">
+   151→ <div className="flex items-center gap-2">
+   152→            <Calendar className="h-3.5 w-3.5 flex-shrink-0" />
+   153→            <span>{formatDate(event.date)}</span>
+   154→          </div>
+   155→          {event.time && (
+   156→            <div className="flex items-center gap-2">
+   157→              <Clock className="h-3.5 w-3.5 flex-shrink-0" />
+   158→              <span>{event.time}{event.endTime ? ` - ${event.endTime}` : ''}</span>
+   159→            </div>
+   160→          )}
+   161→          {event.location && (
+   162→            <div className="flex items-center gap-2">
+   163→              <MapPin className="h-3.5 w-3.5 flex-shrink-0" />
+   164→              <span className="truncate">{event.location}</span>
+   165→            </div>
+   166→          )}
+   167→        </div>
+   168→
+   169→        {/* Capacity Progress */}
+   170→        {event.maxAttendees && (
+   171→          <div className="mt-3">
+   172→            <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
+   173→              <div className="flex items-center gap-1">
+   174→                <Users className="h-3 w-3" />
+   175→                <span>{event.currentAttendees} / {event.maxAttendees} registered</span>
+   176→              </div>
+   177→              <span className={isFull ? 'text-red-500 font-medium' : ''}>{isFull ? 'Full' : `${Math.round(100 - capacityPercent)}% spots left`}</span>
+   178→            </div>
+   179→            <Progress value={capacityPercent} className={`h-1.5 ${isFull ? '[&>div]:bg-red-500' : ''}`} />
+   180→          </div>
+   181→        )}
+   182→
+   183→        {/* Register Button */}
+   184→        {canRegister && (
+   185→          <div className="mt-3">
+   186→            <Button
+   187→              size="sm"
+   188→              className="w-full"
+   189→              disabled={isFull}
+   190→              onClick={() => onRegister(event.id)}
+   191→            >
+   192→              {isFull ? (
+   193→                <><Users className="h-4 w-4 mr-1" /> Event Full</>
+   194→              ) : (
+   195→                <><Plus className="h-4 w-4 mr-1" /> Register</>
+   196→              )}
+   197→            </Button>
+   198→          </div>
+   199→        )}
+   200→      </CardContent>
+   201→    </Card>
+   202→  )
+   203→}
+   204→
+   205→// ============================================================
+   206→// Featured Events Grid
+   207→// ============================================================
+   208→
+   209→function FeaturedEvents({ events, onRegister, canRegister }: { events: EventItem[]; onRegister: (id: string) => void; canRegister: boolean }) {
+   210→  if (events.length === 0) return null
+   211→
+   212→  return (
+   213→    <div className="mb-6">
+   214→      <div className="flex items-center gap-2 mb-3">
+   215→        <Star className="h-5 w-5 text-primary fill-primary" />
+   216→        <h2 className="text-lg font-semibold">Featured Events</h2>
+   217→      </div>
+   218→      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+   219→        {events.map(event => (
+   220→          <EventCard key={event.id} event={event} onRegister={onRegister} canRegister={canRegister} />
+   221→        ))}
+   222→      </div>
+   223→      <Separator className="mt-6" />
+   224→    </div>
+   225→  )
+   226→}
+   227→
+   228→// ============================================================
+   229→// Create Event Dialog
+   230→// ============================================================
+   231→
+   232→function CreateEventDialog({ open, onOpenChange, onCreated }: { open: boolean; onOpenChange: (open: boolean) => void; onCreated: (event: EventItem) => void }) {
+   233→  const { addToast, setLoading } = useAppStore()
+   234→  const [creating, setCreating] = useState(false)
+   235→  const [form, setForm] = useState({
+   236→    title: '',
+   237→    description: '',
+   238→    date: '',
+   239→    time: '',
+   240→    location: '',
+   241→    type: 'WORKSHOP',
+   242→    maxAttendees: '',
+   243→    isFeatured: false,
+   244→  })
+   245→
+   246→  const handleSubmit = async () => {
+   247→    if (!form.title.trim() || !form.date.trim()) {
+   248→      addToast('Title and date are required', 'error')
+   249→      return
+   250→    }
+   251→
+   252→    setCreating(true)
+   253→    setLoading(true)
+   254→    try {
+   255→      const res = await fetch('/api/events', {
+   256→        method: 'POST',
+   257→        headers: { 'Content-Type': 'application/json' },
+   258→        body: JSON.stringify({
+   259→          ...form,
+   260→          maxAttendees: form.maxAttendees ? parseInt(form.maxAttendees) : null,
+   261→        }),
+   262→      })
+   263→      if (!res.ok) throw new Error('Failed to create event')
+   264→      const event = await res.json()
+   265→      onCreated(event)
+   266→      onOpenChange(false)
+   267→      setForm({ title: '', description: '', date: '', time: '', location: '', type: 'WORKSHOP', maxAttendees: '', isFeatured: false })
+   268→      addToast('Event created successfully', 'success')
+   269→    } catch {
+   270→      addToast('Failed to create event', 'error')
+   271→    } finally {
+   272→      setCreating(false)
+   273→      setLoading(false)
+   274→    }
+   275→  }
+   276→
+   277→  return (
+   278→    <Dialog open={open} onOpenChange={onOpenChange}>
+   279→      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+   280→        <DialogHeader>
+   281→          <DialogTitle>Create New Event</DialogTitle>
+   282→          <DialogDescription>Add a new event for the community. Fill in the details below.</DialogDescription>
+   283→        </DialogHeader>
+   284→        <div className="grid gap-4 py-2">
+   285→          <div className="space-y-2">
+   286→            <Label htmlFor="event-title">Title *</Label>
+   287→            <Input
+   288→              id="event-title"
+   289→              value={form.title}
+   290→              onChange={e => setForm(p => ({ ...p, title: e.target.value }))}
+   291→              placeholder="Event title"
+   292→            />
+   293→          </div>
+   294→          <div className="space-y-2">
+   295→            <Label htmlFor="event-desc">Description</Label>
+   296→            <Textarea
+   297→              id="event-desc"
+   298→              value={form.description}
+   299→              onChange={e => setForm(p => ({ ...p, description: e.target.value }))}
+   300→              placeholder="Describe the event, agenda, and what participants will learn..."
+   301→              rows={3}
+   302→            />
+   303→          </div>
+   304→          <div className="grid grid-cols-2 gap-4">
+   305→            <div className="space-y-2">
+   306→              <Label htmlFor="event-date">Date *</Label>
+   307→              <Input
+   308→                id="event-date"
+   309→                type="date"
+   310→                value={form.date}
+   311→                onChange={e => setForm(p => ({ ...p, date: e.target.value }))}
+   312→              />
+   313→            </div>
+   314→            <div className="space-y-2">
+   315→              <Label htmlFor="event-time">Time</Label>
+   316→              <Input
+   317→                id="event-time"
+   318→                type="time"
+   319→                value={form.time}
+   320→                onChange={e => setForm(p => ({ ...p, time: e.target.value }))}
+   321→              />
+   322→            </div>
+   323→          </div>
+   324→          <div className="space-y-2">
+   325→            <Label htmlFor="event-location">Location</Label>
+   326→            <Input
+   327→              id="event-location"
+   328→              value={form.location}
+   329→              onChange={e => setForm(p => ({ ...p, location: e.target.value }))}
+   330→              placeholder="Venue or online meeting link"
+   331→            />
+   332→          </div>
+   333→          <div className="grid grid-cols-2 gap-4">
+   334→            <div className="space-y-2">
+   335→              <Label htmlFor="event-type">Type</Label>
+   336→              <Select value={form.type} onValueChange={v => setForm(p => ({ ...p, type: v }))}>
+   337→                <SelectTrigger className="w-full">
+   338→                  <SelectValue />
+   339→                </SelectTrigger>
+   340→                <SelectContent>
+   341→                  <SelectItem value="WORKSHOP">Workshop</SelectItem>
+   342→                  <SelectItem value="CAMPUS_DRIVE">Campus Drive</SelectItem>
+   343→                  <SelectItem value="SEMINAR">Seminar</SelectItem>
+   344→                  <SelectItem value="WEBINAR">Webinar</SelectItem>
+   345→                </SelectContent>
+   346→              </Select>
+   347→            </div>
+   348→            <div className="space-y-2">
+   349→              <Label htmlFor="event-max">Max Attendees</Label>
+   350→              <Input
+   351→                id="event-max"
+   352→                type="number"
+   353→                value={form.maxAttendees}
+   354→                onChange={e => setForm(p => ({ ...p, maxAttendees: e.target.value }))}
+   355→                placeholder="e.g. 100"
+   356→              />
+   357→            </div>
+   358→          </div>
+   359→        </div>
+   360→        <DialogFooter>
+   361→          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+   362→          <Button onClick={handleSubmit} disabled={creating || !form.title.trim() || !form.date.trim()}>
+   363→            {creating ? (
+   364→              <div className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+   365→            ) : (
+   366→              <Plus className="h-4 w-4 mr-1" />
+   367→            )}
+   368→            Create Event
+   369→          </Button>
+   370→        </DialogFooter>
+   371→      </DialogContent>
+   372→    </Dialog>
+   373→  )
+   374→}
+   375→
+   376→// ============================================================
+   377→// Events View
+   378→// ============================================================
+   379→
+   380→function EventsViewContent() {
+   381→  const { events, currentUser, addEvent, addToast, setLoading } = useAppStore()
+   382→  const [filter, setFilter] = useState('all')
+   383→  const [createDialogOpen, setCreateDialogOpen] = useState(false)
+   384→  const [registering, setRegistering] = useState<string | null>(null)
+   385→
+   386→  const isAdminOrPlacement = currentUser?.role === 'ADMIN' || currentUser?.role === 'PLACEMENT_CELL'
+   387→  const isStudent = currentUser?.role === 'STUDENT'
+   388→
+   389→  const featuredEvents = useMemo(() => events.filter(e => e.isFeatured), [events])
+   390→  const filteredEvents = useMemo(() => {
+   391→    let filtered = events.filter(e => !e.isFeatured)
+   392→    if (filter !== 'all') {
+   393→      filtered = events.filter(e => e.type.toLowerCase() === filter.toLowerCase())
+   394→    }
+   395→    return filtered.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+   396→  }, [events, filter])
+   397→
+   398→  const handleRegister = async (eventId: string) => {
+   399→    setRegistering(eventId)
+   400→    try {
+   401→      const event = events.find(e => e.id === eventId)
+   402→      if (!event) return
+   403→      if (event.maxAttendees && event.currentAttendees >= event.maxAttendees) {
+   404→        addToast('Event is full', 'error')
+   405→        return
+   406→      }
+   407→      // Optimistic update
+   408→      addEvent({ ...event, currentAttendees: event.currentAttendees + 1 })
+   409→      addToast('Registered successfully!', 'success')
+   410→    } catch {
+   411→      addToast('Failed to register', 'error')
+   412→    } finally {
+   413→      setRegistering(null)
+   414→    }
+   415→  }
+   416→
+   417→  const handleEventCreated = (event: EventItem) => {
+   418→    addEvent(event)
+   419→  }
+   420→
+   421→  const eventTypes = [
+   422→    { value: 'all', label: 'All' },
+   423→    { value: 'workshop', label: 'Workshops' },
+   424→    { value: 'campus_drive', label: 'Campus Drives' },
+   425→    { value: 'seminar', label: 'Seminars' },
+   426→    { value: 'webinar', label: 'Webinars' },
+   427→  ]
+   428→
+   429→  return (
+   430→    <div className="p-6 max-w-6xl mx-auto">
+   431→      {/* Header */}
+   432→      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-6">
+   433→        <div>
+   434→          <h1 className="text-2xl font-bold">Events</h1>
+   435→          <p className="text-muted-foreground text-sm mt-1">Discover workshops, campus drives, seminars, and more</p>
+   436→        </div>
+   437→        {isAdminOrPlacement && (
+   438→          <Button onClick={() => setCreateDialogOpen(true)}>
+   439→            <Plus className="h-4 w-4 mr-1" />
+   440→            Create Event
+   441→          </Button>
+   442→        )}
+   443→      </div>
+   444→
+   445→      {/* Filter Tabs */}
+   446→      <Tabs value={filter} onValueChange={setFilter}>
+   447→        <TabsList className="mb-4">
+   448→          {eventTypes.map(type => (
+   449→            <TabsTrigger key={type.value} value={type.value} className="text-xs sm:text-sm">
+   450→              {type.label}
+   451→            </TabsTrigger>
+   452→          ))}
+   453→        </TabsList>
+   454→
+   455→        <TabsContent value={filter} className="mt-0">
+   456→          {/* Featured Events */}
+   457→          {filter === 'all' && featuredEvents.length > 0 && (
+   458→            <FeaturedEvents events={featuredEvents} onRegister={handleRegister} canRegister={isStudent} />
+   459→          )}
+   460→
+   461→          {/* All Events Grid */}
+   462→          {filteredEvents.length > 0 ? (
+   463→            <div className="grid gap-4 sm:grid-cols-2">
+   464→              {filteredEvents.map(event => (
+   465→                <EventCard
+   466→                  key={event.id}
+   467→                  event={event}
+   468→                  onRegister={handleRegister}
+   469→                  canRegister={isStudent}
+   470→                />
+   471→              ))}
+   472→            </div>
+   473→          ) : (
+   474→            <div className="flex flex-col items-center justify-center py-16 text-center">
+   475→              <Calendar className="h-16 w-16 text-muted-foreground/20 mb-4" />
+   476→              <h3 className="text-lg font-semibold mb-1">No events found</h3>
+   477→              <p className="text-sm text-muted-foreground max-w-md">
+   478→                {filter === 'all'
+   479→                  ? 'There are no upcoming events right now. Check back later or create one if you have admin access.'
+   480→                  : `No ${eventTypes.find(t => t.value === filter)?.label.toLowerCase() || ''} events available at the moment.`}
+   481→              </p>
+   482→            </div>
+   483→          )}
+   484→        </TabsContent>
+   485→      </Tabs>
+   486→
+   487→      {/* Create Event Dialog */}
+   488→      {isAdminOrPlacement && (
+   489→        <CreateEventDialog
+   490→          open={createDialogOpen}
+   491→          onOpenChange={setCreateDialogOpen}
+   492→          onCreated={handleEventCreated}
+   493→        />
+   494→      )}
+   495→    </div>
+   496→  )
+   497→}
+   498→
+   499→// ============================================================
+   500→// Notification Card
+   501→// ============================================================
+   502→
+   503→function NotificationCard({ notification, onClick }: { notification: NotificationItem; onClick: (id: string) => void }) {
+   504→  const iconColor = getNotificationColor(notification.type)
+   505→
+   506→  return (
+   507→    <button
+   508→      onClick={() => onClick(notification.id)}
+   509→      className={`w-full text-left transition-colors rounded-lg border p-4 hover:bg-accent/50 ${
+   510→        !notification.isRead ? 'bg-primary/5 border-primary/20' : ''
+   511→      }`}
+   512→      aria-label={`Mark notification as read: ${notification.title}`}
+   513→    >
+   514→      <div className="flex items-start gap-3">
+   515→        <div className={`mt-0.5 ${iconColor}`}>
+   516→          <NotificationIcon type={notification.type} className="h-5 w-5" />
+   517→        </div>
+   518→        <div className="flex-1 min-w-0">
+   519→          <div className="flex items-start justify-between gap-2">
+   520→            <h3 className={`text-sm font-medium leading-tight ${!notification.isRead ? 'font-semibold' : ''}`}>
+   521→              {notification.title}
+   522→            </h3>
+   523→            <div className="flex items-center gap-2 flex-shrink-0">
+   524→              <span className="text-xs text-muted-foreground whitespace-nowrap">{getTimeAgo(notification.createdAt)}</span>
+   525→              {!notification.isRead && (
+   526→                <span className="h-2 w-2 rounded-full bg-primary flex-shrink-0" />
+   527→              )}
+   528→            </div>
+   529→          </div>
+   530→          <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{notification.message}</p>
+   531→        </div>
+   532→      </div>
+   533→    </button>
+   534→  )
+   535→}
+   536→
+   537→// ============================================================
+   538→// Notifications View
+   539→// ============================================================
+   540→
+   541→function NotificationsViewContent() {
+   542→  const { notifications, markNotificationRead, addToast, setLoading } = useAppStore()
+   543→  const [filter, setFilter] = useState<'all' | 'unread'>('all')
+   544→  const [markingAll, setMarkingAll] = useState(false)
+   545→
+   546→  const filteredNotifications = useMemo(() => {
+   547→    const sorted = [...notifications].sort(
+   548→      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+   549→    )
+   550→    if (filter === 'unread') {
+   551→      return sorted.filter(n => !n.isRead)
+   552→    }
+   553→    return sorted
+   554→  }, [notifications, filter])
+   555→
+   556→  const unreadCount = notifications.filter(n => !n.isRead).length
+   557→
+   558→  const handleMarkRead = async (id: string) => {
+   559→    const notif = notifications.find(n => n.id === id)
+   560→    if (!notif || notif.isRead) return
+   561→
+   562→    try {
+   563→      const res = await fetch('/api/events', {
+   564→        method: 'PUT',
+   565→        headers: { 'Content-Type': 'application/json' },
+   566→        body: JSON.stringify({ notificationId: id, isRead: true }),
+   567→      })
+   568→      if (res.ok) {
+   569→        markNotificationRead(id)
+   570→      }
+   571→    } catch {
+   572→      // Still mark locally
+   573→      markNotificationRead(id)
+   574→    }
+   575→  }
+   576→
+   577→  const handleMarkAllRead = async () => {
+   578→    setMarkingAll(true)
+   579→    setLoading(true)
+   580→    try {
+   581→      const unread = notifications.filter(n => !n.isRead)
+   582→      await Promise.allSettled(
+   583→        unread.map(async (n) => {
+   584→          try {
+   585→            await fetch('/api/events', {
+   586→              method: 'PUT',
+   587→              headers: { 'Content-Type': 'application/json' },
+   588→              body: JSON.stringify({ notificationId: n.id, isRead: true }),
+   589→            })
+   590→            markNotificationRead(n.id)
+   591→          } catch {
+   592→            // ignore individual failures
+   593→          }
+   594→        })
+   595→      )
+   596→      addToast('All notifications marked as read', 'success')
+   597→    } finally {
+   598→      setMarkingAll(false)
+   599→      setLoading(false)
+   600→    }
+   601→  }
+   602→
+   603→  return (
+   604→    <div className="p-6 max-w-3xl mx-auto">
+   605→      {/* Header */}
+   606→      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-6">
+   607→        <div>
+   608→          <h1 className="text-2xl font-bold">Notifications</h1>
+   609→          <p className="text-muted-foreground text-sm mt-1">
+   610→            {unreadCount > 0
+   611→              ? `You have ${unreadCount} unread notification${unreadCount > 1 ? 's' : ''}`
+   612→              : 'You are all caught up!'}
+   613→          </p>
+   614→        </div>
+   615→        {unreadCount > 0 && (
+   616→          <Button
+   617→            variant="outline"
+   618→            size="sm"
+   619→            onClick={handleMarkAllRead}
+   620→            disabled={markingAll}
+   621→          >
+   622→            {markingAll ? (
+   623→              <div className="w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+   624→            ) : (
+   625→              <CheckCheck className="h-4 w-4 mr-1" />
+   626→            )}
+   627→            Mark All Read
+   628→          </Button>
+   629→        )}
+   630→      </div>
+   631→
+   632→      {/* Filter Tabs */}
+   633→      <Tabs value={filter} onValueChange={v => setFilter(v as 'all' | 'unread')}>
+   634→        <TabsList className="mb-4">
+   635→          <TabsTrigger value="all" className="text-sm">
+   636→            All
+   637→            {notifications.length > 0 && (
+   638→              <Badge variant="secondary" className="ml-1.5 h-5 px-1.5 text-xs">{notifications.length}</Badge>
+   639→            )}
+   640→          </TabsTrigger>
+   641→          <TabsTrigger value="unread" className="text-sm">
+   642→            Unread
+   643→            {unreadCount > 0 && (
+   644→              <Badge variant="secondary" className="ml-1.5 h-5 px-1.5 text-xs">{unreadCount}</Badge>
+   645→            )}
+   646→          </TabsTrigger>
+   647→        </TabsList>
+   648→
+   649→        <TabsContent value={filter} className="mt-0">
+   650→          <ScrollArea className="max-h-[calc(100vh-16rem)]">
+   651→            <div className="space-y-2">
+   652→              {filteredNotifications.length > 0 ? (
+   653→                filteredNotifications.map(notif => (
+   654→                  <NotificationCard key={notif.id} notification={notif} onClick={handleMarkRead} />
+   655→                ))
+   656→              ) : (
+   657→                <div className="flex flex-col items-center justify-center py-16 text-center">
+   658→                  <Bell className="h-16 w-16 text-muted-foreground/20 mb-4" />
+   659→                  <h3 className="text-lg font-semibold mb-1">No notifications yet</h3>
+   660→                  <p className="text-sm text-muted-foreground max-w-md">
+   661→                    {filter === 'unread'
+   662→                      ? 'You have no unread notifications. Everything is up to date!'
+   663→                      : 'Notifications about events, applications, and updates will appear here.'}
+   664→                  </p>
+   665→                </div>
+   666→              )}
+   667→            </div>
+   668→          </ScrollArea>
+   669→        </TabsContent>
+   670→      </Tabs>
+   671→    </div>
+   672→  )
+   673→}
+   674→
+   675→// ============================================================
+   676→// Main Export
+   677→// ============================================================
+   678→
+   679→interface EventsViewProps {
+   680→  view: 'events' | 'notifications'
+   681→}
+   682→
+   683→export function EventsView({ view }: EventsViewProps) {
+   684→  const { isLoading } = useAppStore()
+   685→
+   686→  if (isLoading) {
+   687→    return (
+   688→      <div className="p-6 max-w-6xl mx-auto space-y-4">
+   689→        <Skeleton className="h-8 w-48" />
+   690→        <Skeleton className="h-10 w-64" />
+   691→        <div className="grid gap-4 sm:grid-cols-2">
+   692→          {Array.from({ length: 4 }).map((_, i) => (
+   693→            <Card key={i}>
+   694→              <CardContent className="p-4 space-y-3">
+   695→                <Skeleton className="h-5 w-3/4" />
+   696→                <Skeleton className="h-4 w-full" />
+   697→                <Skeleton className="h-4 w-1/2" />
+   698→                <Skeleton className="h-8 w-24" />
+   699→              </CardContent>
+   700→            </Card>
+   701→          ))}
+   702→        </div>
+   703→      </div>
+   704→    )
+   705→  }
+   706→
+   707→  if (view === 'notifications') {
+   708→    return <NotificationsViewContent />
+   709→  }
+   710→
+   711→  return <EventsViewContent />
+   712→}
+   713→
