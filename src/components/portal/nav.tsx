@@ -264,13 +264,8 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       <div className="px-4 py-3">
         <div className="flex items-center gap-3">
           <Avatar className="h-8 w-8">
-            <AvatarFallback className="bg-emerald-100 text-emerald-700 text-xs font-semibold">
-              {currentUser.name
-                .split(' ')
-                .map((n) => n[0])
-                .join('')
-                .toUpperCase()
-                .slice(0, 2)}
+            <AvatarFallback className="bg-emerald-100 text-emerald-700 text-[10px] font-semibold leading-tight text-center">
+              {currentUser.name.split(' ')[0].slice(0, 6)}
             </AvatarFallback>
           </Avatar>
           <div className="min-w-0 flex-1">
@@ -379,13 +374,8 @@ export function AppShell() {
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="relative h-9 w-9 rounded-full">
                   <Avatar className="h-8 w-8">
-                    <AvatarFallback className="bg-emerald-100 text-emerald-700 text-xs font-semibold">
-                      {currentUser.name
-                        .split(' ')
-                        .map((n) => n[0])
-                        .join('')
-                        .toUpperCase()
-                        .slice(0, 2)}
+                    <AvatarFallback className="bg-emerald-100 text-emerald-700 text-[10px] font-semibold leading-tight text-center">
+                      {currentUser.name.split(' ')[0].slice(0, 6)}
                     </AvatarFallback>
                   </Avatar>
                 </Button>

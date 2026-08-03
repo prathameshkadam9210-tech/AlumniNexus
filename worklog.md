@@ -155,3 +155,18 @@ Stage Summary:
 - AI Chat messages area scrolls properly for long responses
 - Alumni & Students can now donate to the college via Payments page with purpose-based categories
 - Build verified: zero errors
+
+---
+Task ID: 2
+Agent: Main Agent
+Task: Fix avatar showing initials instead of full name, and fix Donate dialog scroll issue
+
+Work Log:
+- Updated profile page avatar (h-28 w-28) to show full user name instead of 2-letter initials, with smaller font and word-wrapping
+- Updated sidebar bottom avatar and header dropdown avatar to show first name (up to 6 chars) instead of initials
+- Fixed Donate Now dialog: added `max-h-[90vh] flex flex-col` to DialogContent and `overflow-y-auto flex-1 min-h-0` to the body div so it scrolls when content overflows
+
+Stage Summary:
+- Avatar now shows consistent full name (profile page) or first name (sidebar/header) instead of initials
+- Donate dialog is now scrollable — users can reach the Donate button on any screen size
+- Build verified: zero errors

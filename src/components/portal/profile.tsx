@@ -215,13 +215,8 @@ function ProfileForm({ userId }: { userId: string }) {
             {avatarPreview ? (
               <img src={avatarPreview} alt={currentUser?.name} className="h-full w-full object-cover rounded-full" />
             ) : (
-              <AvatarFallback className="bg-gradient-to-br from-emerald-500 to-teal-600 text-white text-3xl font-bold">
-                {currentUser?.name
-                  ?.split(' ')
-                  .map(n => n[0])
-                  .join('')
-                  .toUpperCase()
-                  .slice(0, 2) || 'U'}
+              <AvatarFallback className="bg-gradient-to-br from-emerald-500 to-teal-600 text-white text-base font-semibold leading-tight text-center px-2">
+                {currentUser?.name || 'User'}
               </AvatarFallback>
             )}
           </Avatar>

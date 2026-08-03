@@ -1023,7 +1023,7 @@ export function PaymentsView() {
 
       {/* Donate Now Dialog */}
       <Dialog open={donateDialogOpen} onOpenChange={setDonateDialogOpen}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-lg max-h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-lg bg-emerald-600 flex items-center justify-center">
@@ -1036,7 +1036,7 @@ export function PaymentsView() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-5">
+          <div className="space-y-5 overflow-y-auto flex-1 min-h-0 pr-1">
             {/* Purpose Selection */}
             <div className="space-y-2">
               <Label>Donation Purpose</Label>
