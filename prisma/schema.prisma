@@ -1,0 +1,253 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Organization {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  code        String   @unique
+  logo        String?
+  website     String?
+  city        String
+  state       String
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users       User[]
+  events      Event[]
+
+  @@map("organizations")
+}
+
+model User {
+  id              String   @id @default(cuid())
+  email           String   @unique
+  password        String?
+  name            String
+  role            String   @default("STUDENT")
+  avatar          String?
+  phone           String?
+  bio             String?
+  department      String?
+  batch           String?
+  graduationYear  Int?
+  company         String?
+  designation     String?
+  experience      String?
+  location        String?
+  skills          String?
+  resumeUrl       String?
+  linkedinUrl     String?
+  gpa             Float?
+  isVerified      Boolean  @default(false)
+  verificationStatus String @default("PENDING")
+  emailVerified   Boolean  @default(false)
+  verificationOtp String?
+  otpExpiry       DateTime?
+  pendingEmail    String?
+  pendingEmailOtp String?
+  pendingEmailOtpExpiry DateTime?
+  resetToken      String?
+  resetTokenExpiry DateTime?
+  isOnline        Boolean  @default(false)
+  organizationId  String?
+  organization    Organization?  @relation(fields: [organizationId], references: [id])
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  postedJobs        Job[]
+  applications      Application[] @relation("UserApplications")
+  mentorSlotsOffered Mentorship[] @relation("MentorOffers")
+  mentorBookings     Mentorship[] @relation("MentorBookings")
+  organizedEvents    Event[]
+  notifications      Notification[]
+  payments           Payment[]
+  certificates       Certificate[]
+  eventRegistrations EventRegistration[]
+
+  @@map("users")
+}
+
+model Job {
+  id            String   @id @default(cuid())
+  title         String
+  company       String
+  location      String
+  type          String   @default("FULL_TIME")
+  salaryMin     Float?
+  salaryMax     Float?
+  currency      String   @default("INR")
+  description   String
+  requirements  String
+  skills        String?
+  experienceRequired String?
+  postedById    String
+  postedBy      User     @relation(fields: [postedById], references: [id])
+  status        String   @default("OPEN")
+  deadline      DateTime?
+  applicantsCount Int    @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  applications  Application[]
+
+  @@map("jobs")
+}
+
+model Application {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation("UserApplications", fields: [userId], references: [id])
+  jobId         String
+  job           Job      @relation(fields: [jobId], references: [id])
+  status        String   @default("PENDING")
+  coverLetter   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([userId, jobId])
+  @@map("applications")
+}
+
+model Mentorship {
+  id            String   @id @default(cuid())
+  mentorId      String
+  mentor        User     @relation("MentorOffers", fields: [mentorId], references: [id])
+  menteeId      String
+  mentee        User     @relation("MentorBookings", fields: [menteeId], references: [id])
+  date          DateTime
+  timeSlot      String
+  duration      Int      @default(30)
+  status        String   @default("PENDING")
+  topic         String?
+  meetingLink   String?
+  notes         String?
+  menteeName    String?
+  mentorName    String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("mentorships")
+}
+
+model Event {
+  id               String   @id @default(cuid())
+  title            String
+  description      String
+  date             DateTime
+  registrationDeadline DateTime?
+  endTime          DateTime?
+  time             String?
+  location         String?
+  type             String   @default("WORKSHOP")
+  organizerId      String
+  organizer        User     @relation(fields: [organizerId], references: [id])
+  maxAttendees     Int?
+  currentAttendees Int      @default(0)
+  image            String?
+  isFeatured       Boolean  @default(false)
+  price            Float?   @default(0)
+  currency         String   @default("INR")
+  organizationId   String?
+  organization     Organization?  @relation(fields: [organizationId], references: [id])
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  registrations  EventRegistration[]
+
+  @@map("events")
+}
+
+model EventRegistration {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  eventId   String
+  event     Event    @relation(fields: [eventId], references: [id])
+  status    String   @default("REGISTERED")
+  createdAt DateTime @default(now())
+
+  @@unique([userId, eventId])
+  @@map("event_registrations")
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  title     String
+  message   String
+  type      String   @default("INFO")
+  link      String?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@map("notifications")
+}
+
+model Payment {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id])
+  amount        Float
+  currency      String   @default("INR")
+  type          String
+  status        String   @default("PENDING")
+  razorpayId    String?
+  razorpayOrderId String?
+  description   String
+  purpose       String?
+  referenceId   String?
+  receiptEmailedAt DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("payments")
+}
+
+model FundraisingGoal {
+  key          String   @id
+  targetAmount Float    @default(0)
+  updatedAt    DateTime @updatedAt
+
+  @@map("fundraising_goals")
+}
+
+model Certificate {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id])
+  title           String
+  type            String
+  description     String
+  certificateHash String   @unique
+  txHash          String?
+  issuedBy        String?
+  issuedAt        DateTime @default(now())
+  expiresAt       DateTime?
+  isVerified      Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("certificates")
+}
+
+model Analytics {
+  id            String   @id @default(cuid())
+  metric        String
+  value         Int      @default(0)
+  label         String?
+  period        String?
+  year          Int?
+  month         Int?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("analytics")
+}
