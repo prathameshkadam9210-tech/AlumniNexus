@@ -11,8 +11,10 @@ import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Progress } from '@/components/ui/progress'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { UserAvatar } from '@/components/portal/user-avatar'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { getGraduationYear, getGraduationYearOptions, getStartYear, getStartYearOptions } from '@/lib/batches'
 import {
   User as UserIcon,
   Mail,
@@ -53,23 +55,25 @@ function formatSkillsForDisplay(skills: string | null | undefined): string {
 }
 
 function ProfileForm({ userId }: { userId: string }) {
-  const { currentUser, updateUser, addToast, setLoading, setCurrentView } = useAppStore()
+  const { currentUser, updateUser, addToast, setLoading, setCurrentView, loadDataForUser } = useAppStore()
   const [saving, setSaving] = useState(false)
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
+  const [uploadingResult, setUploadingResult] = useState(false)
   const [emailOtpSent, setEmailOtpSent] = useState(false)
   const [emailOtp, setEmailOtp] = useState('')
   const [avatarPreview, setAvatarPreview] = useState<string | null>(currentUser?.avatar || null)
   const [form, setForm] = useState(() => ({
     name: currentUser?.name || '',
     email: currentUser?.email || '',
+    gender: currentUser?.gender || '',
     phone: currentUser?.phone || '',
     bio: currentUser?.bio || '',
     department: currentUser?.department || '',
     location: currentUser?.location || '',
     skills: formatSkillsForDisplay(currentUser?.skills),
     linkedinUrl: currentUser?.linkedinUrl || '',
-    batch: currentUser?.batch || '',
-    graduationYear: currentUser?.graduationYear?.toString() || '',
+    startYear: getStartYear(currentUser?.batch)?.toString() || '',
+    graduationYear: getGraduationYear(currentUser?.batch, currentUser?.graduationYear)?.toString() || '',
     gpa: currentUser?.gpa?.toString() || '',
     resumeUrl: currentUser?.resumeUrl || '',
     company: currentUser?.company || '',
@@ -83,6 +87,14 @@ function ProfileForm({ userId }: { userId: string }) {
 
   const handleSave = async () => {
     if (!currentUser) return
+    if (currentUser.role === 'STUDENT' || currentUser.role === 'ALUMNI') {
+      const startYear = Number(form.startYear)
+      const graduationYear = Number(form.graduationYear)
+      if (!Number.isInteger(startYear) || !Number.isInteger(graduationYear) || startYear < 1992 || graduationYear < startYear) {
+        addToast('Select a valid intake year and a graduation year no earlier than the intake year.', 'error')
+        return
+      }
+    }
     if (form.email.trim().toLowerCase() !== currentUser.email.toLowerCase()) {
       if (emailOtpSent) {
         addToast('Verify the code sent to your new email before saving profile changes.', 'info')
@@ -119,6 +131,7 @@ function ProfileForm({ userId }: { userId: string }) {
         actorId: currentUser.id,
         name: form.name,
         email: form.email,
+        gender: form.gender || null,
         phone: form.phone || null,
         bio: form.bio || null,
         department: form.department || null,
@@ -128,7 +141,7 @@ function ProfileForm({ userId }: { userId: string }) {
       }
 
       if (currentUser?.role === 'STUDENT' || currentUser?.role === 'ALUMNI') {
-        body.batch = form.batch || null
+        body.batch = `${form.startYear}-${form.graduationYear}`
         body.graduationYear = form.graduationYear ? parseInt(form.graduationYear) : null
       }
       if (currentUser?.role === 'STUDENT') {
@@ -244,15 +257,12 @@ function ProfileForm({ userId }: { userId: string }) {
       {/* Avatar Section with Upload */}
       <div className="flex flex-col items-center gap-4">
         <div className="relative group cursor-pointer" onClick={() => document.getElementById('avatar-upload')?.click()}>
-          <Avatar className="h-28 w-28 text-2xl ring-4 ring-emerald-100 dark:ring-emerald-900/50 transition-all group-hover:ring-emerald-300">
-            {avatarPreview ? (
-              <img src={avatarPreview} alt={currentUser?.name} className="h-full w-full object-cover rounded-full" />
-            ) : (
-              <AvatarFallback className="bg-gradient-to-br from-emerald-500 to-teal-600 text-white text-base font-semibold leading-tight text-center px-2">
-                {currentUser?.name || 'User'}
-              </AvatarFallback>
-            )}
-          </Avatar>
+          <UserAvatar
+            name={currentUser?.name || 'User'}
+            avatar={avatarPreview}
+            gender={currentUser?.gender}
+            className="h-28 w-28 text-2xl ring-4 ring-emerald-100 dark:ring-emerald-900/50 transition-all group-hover:ring-emerald-300"
+          />
           {/* Upload overlay */}
           <div className="absolute inset-0 rounded-full bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
             {uploadingAvatar ? (
@@ -354,6 +364,23 @@ function ProfileForm({ userId }: { userId: string }) {
           </div>
 
           <div className="space-y-2">
+            <Label htmlFor="gender">Gender (optional)</Label>
+            <Select
+              value={form.gender || 'UNSPECIFIED'}
+              onValueChange={(value) => handleChange('gender', value === 'UNSPECIFIED' ? '' : value)}
+            >
+              <SelectTrigger id="gender"><SelectValue placeholder="Choose an avatar style" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="UNSPECIFIED">Not specified</SelectItem>
+                <SelectItem value="FEMALE">Female</SelectItem>
+                <SelectItem value="MALE">Male</SelectItem>
+                <SelectItem value="NON_BINARY">Non-binary</SelectItem>
+                <SelectItem value="PREFER_NOT_TO_SAY">Prefer not to say</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
             <Label htmlFor="phone">Phone</Label>
             <div className="relative">
               <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -440,25 +467,31 @@ function ProfileForm({ userId }: { userId: string }) {
 
           {(isStudent || isAlumni) && (
             <>
-              <div className="space-y-2">
-                <Label htmlFor="batch">Batch</Label>
-                <Input
-                  id="batch"
-                  value={form.batch}
-                  onChange={e => handleChange('batch', e.target.value)}
-                  placeholder="e.g. 2022-2023 passout batch"
-                />
-              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label htmlFor="startYear">Intake year</Label>
+                  <Select value={form.startYear} onValueChange={(value) => handleChange('startYear', value)}>
+                    <SelectTrigger id="startYear"><SelectValue placeholder="Select original intake year" /></SelectTrigger>
+                    <SelectContent>
+                      {getStartYearOptions(currentUser ? [currentUser] : []).map((year) => <SelectItem key={year} value={String(year)}>{year}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="graduationYear">Graduation Year</Label>
-                <Input
-                  id="graduationYear"
-                  type="number"
-                  value={form.graduationYear}
-                  onChange={e => handleChange('graduationYear', e.target.value)}
-                  placeholder="2024"
-                />
+                <div className="space-y-2">
+                  <Label htmlFor="graduationYear">{isStudent ? 'Expected graduation year' : 'Graduation year'}</Label>
+                  <Select value={form.graduationYear} onValueChange={(value) => handleChange('graduationYear', value)}>
+                    <SelectTrigger id="graduationYear"><SelectValue placeholder="Select graduation year" /></SelectTrigger>
+                    <SelectContent>
+                      {getGraduationYearOptions(currentUser ? [currentUser] : []).map((year) => <SelectItem key={year} value={String(year)}>{year}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {isStudent && (
+                  <p className="col-span-2 text-xs text-muted-foreground">
+                    For ATKT or other delays, choose your expected completion year. Your original intake year stays unchanged.
+                  </p>
+                )}
               </div>
             </>
           )}
@@ -549,6 +582,123 @@ function ProfileForm({ userId }: { userId: string }) {
       </div>
 
       <Separator />
+
+      {isStudent && (
+        <>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Final-year result and alumni status</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Upload your final-year result, then choose whether to move to the alumni community or remain a student.
+                Your result is private and visible only to you and authorized administrators.
+              </p>
+              <div className="flex flex-wrap items-center gap-3">
+                <Input
+                  type="file"
+                  accept="application/pdf,image/jpeg,image/png"
+                  disabled={uploadingResult}
+                  aria-label="Upload final-year result"
+                  onChange={async (event) => {
+                    const file = event.target.files?.[0]
+                    if (!file || !currentUser) return
+                    if (file.size > 10 * 1024 * 1024) {
+                      addToast('Result file must be smaller than 10 MB', 'error')
+                      event.target.value = ''
+                      return
+                    }
+                    setUploadingResult(true)
+                    try {
+                      const data = new FormData()
+                      data.append('result', file)
+                      data.append('studentId', currentUser.id)
+                      data.append('actorId', currentUser.id)
+                      const response = await fetch('/api/upload/result', { method: 'POST', body: data })
+                      const result = await response.json()
+                      if (!response.ok) throw new Error(result.error || 'Unable to upload result')
+                      updateUser(currentUser.id, {
+                        finalYearResultUrl: result.finalYearResultUrl,
+                        alumniChoice: null,
+                      })
+                      addToast('Final-year result uploaded successfully', 'success')
+                    } catch (error) {
+                      addToast(error instanceof Error ? error.message : 'Unable to upload result', 'error')
+                    } finally {
+                      setUploadingResult(false)
+                      event.target.value = ''
+                    }
+                  }}
+                />
+                {currentUser?.finalYearResultUrl && (
+                  <a
+                    className="text-sm text-primary underline"
+                    href={`/api/upload/result?userId=${encodeURIComponent(currentUser.id)}&actorId=${encodeURIComponent(currentUser.id)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    View uploaded result
+                  </a>
+                )}
+              </div>
+              {currentUser?.finalYearResultUrl ? (
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    disabled={uploadingResult}
+                    onClick={async () => {
+                      try {
+                        const response = await fetch('/api/upload/result', {
+                          method: 'PUT',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ studentId: currentUser.id, actorId: currentUser.id, decision: 'ALUMNI' }),
+                        })
+                        const result = await response.json()
+                        if (!response.ok) throw new Error(result.error || 'Unable to update account')
+                        updateUser(currentUser.id, { role: result.role, alumniChoice: result.alumniChoice })
+                        await loadDataForUser?.({ ...currentUser, role: result.role })
+                        addToast('Your account is now part of the alumni community', 'success')
+                      } catch (error) {
+                        addToast(error instanceof Error ? error.message : 'Unable to update account', 'error')
+                      }
+                    }}
+                  >
+                    Join as alumni
+                  </Button>
+                  <Button
+                    variant="outline"
+                    disabled={uploadingResult}
+                    onClick={async () => {
+                      try {
+                        const response = await fetch('/api/upload/result', {
+                          method: 'PUT',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ studentId: currentUser.id, actorId: currentUser.id, decision: 'STUDENT' }),
+                        })
+                        const result = await response.json()
+                        if (!response.ok) throw new Error(result.error || 'Unable to save choice')
+                        updateUser(currentUser.id, { alumniChoice: result.alumniChoice })
+                        addToast('You will remain a student', 'success')
+                      } catch (error) {
+                        addToast(error instanceof Error ? error.message : 'Unable to save choice', 'error')
+                      }
+                    }}
+                  >
+                    Remain a student
+                  </Button>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">PDF, JPEG, or PNG, up to 10 MB.</p>
+              )}
+              {currentUser?.alumniChoice && (
+                <p className="text-sm text-muted-foreground" role="status">
+                  Your current choice: {currentUser.alumniChoice === 'ALUMNI' ? 'Alumni' : 'Remain a student'}.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+          <Separator />
+        </>
+      )}
 
       {/* Save Button */}
       <div className="flex justify-end">
@@ -1305,7 +1455,7 @@ export function ProfileView({ view }: ProfileViewProps) {
           }}>Back</Button>
         </div>
         <Card>
-          <CardHeader><CardTitle className="flex items-center gap-3"><Avatar><AvatarFallback>{viewedUser.name.slice(0, 2).toUpperCase()}</AvatarFallback></Avatar>{viewedUser.name}</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="flex items-center gap-3"><UserAvatar name={viewedUser.name} avatar={viewedUser.avatar} className="h-8 w-8" />{viewedUser.name}</CardTitle></CardHeader>
           <CardContent className="grid gap-4 sm:grid-cols-2">
             <p><span className="font-medium">Role: </span>{viewedUser.role}</p>
             <p><span className="font-medium">Email: </span>{viewedUser.email}</p>
@@ -1320,6 +1470,18 @@ export function ProfileView({ view }: ProfileViewProps) {
             {skills && <p className="sm:col-span-2"><span className="font-medium">Skills: </span>{skills}</p>}
             {viewedUser.linkedinUrl && <p className="sm:col-span-2"><a className="text-primary underline" href={viewedUser.linkedinUrl} target="_blank" rel="noreferrer">LinkedIn profile</a></p>}
             {viewedUser.resumeUrl && <p className="sm:col-span-2"><a className="text-primary underline" href={viewedUser.resumeUrl} target="_blank" rel="noreferrer">View or download resume</a></p>}
+            {viewedUser.finalYearResultUrl && (currentUser.role === 'ADMIN' || currentUser.role === 'PLACEMENT_CELL') && (
+              <p className="sm:col-span-2">
+                <a
+                  className="text-primary underline"
+                  href={`/api/upload/result?userId=${encodeURIComponent(viewedUser.id)}&actorId=${encodeURIComponent(currentUser.id)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  View final-year result
+                </a>
+              </p>
+            )}
           </CardContent>
         </Card>
       </div>

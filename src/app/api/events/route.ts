@@ -11,6 +11,13 @@ export async function GET(req: NextRequest) {
     if (action === 'notifications') {
       const where: Record<string, unknown> = {}
       if (userId) where.userId = userId
+      if (userId) {
+        const recipient = await db.user.findUnique({
+          where: { id: userId },
+          select: { role: true },
+        })
+        if (recipient?.role === 'PLACEMENT_CELL') where.type = { not: 'DONATION' }
+      }
       const notifications = await db.notification.findMany({
         where,
         orderBy: { createdAt: 'desc' },
@@ -126,29 +133,14 @@ export async function POST(req: NextRequest) {
 export async function PUT(req: NextRequest) {
   try {
     const body = await req.json()
-    const { notificationId, userId, isRead } = body
+    const { notificationId, isRead } = body
 
-    if (typeof userId !== 'string' || !userId) {
-      return NextResponse.json({ error: 'User ID is required' }, { status: 400 })
-    }
-
-    if (typeof notificationId === 'string' && notificationId) {
-      const result = await db.notification.updateMany({
-        where: { id: notificationId, userId },
-        data: { isRead: typeof isRead === 'boolean' ? isRead : true },
+    if (notificationId) {
+      await db.notification.update({
+        where: { id: notificationId },
+        data: { isRead: isRead ?? true },
       })
-      if (result.count === 0) {
-        return NextResponse.json({ error: 'Notification not found' }, { status: 404 })
-      }
       return NextResponse.json({ success: true })
-    }
-
-    if (isRead === true) {
-      const result = await db.notification.updateMany({
-        where: { userId, isRead: false },
-        data: { isRead: true },
-      })
-      return NextResponse.json({ success: true, updatedCount: result.count })
     }
 
     return NextResponse.json({ error: 'Invalid request' }, { status: 400 })

@@ -32,6 +32,7 @@ model User {
   name            String
   role            String   @default("STUDENT")
   avatar          String?
+  gender          String?
   phone           String?
   bio             String?
   department      String?
@@ -45,6 +46,8 @@ model User {
   resumeUrl       String?
   linkedinUrl     String?
   gpa             Float?
+  finalYearResultUrl String?
+  alumniChoice    String?
   isVerified      Boolean  @default(false)
   verificationStatus String @default("PENDING")
   emailVerified   Boolean  @default(false)
@@ -70,6 +73,11 @@ model User {
   payments           Payment[]
   certificates       Certificate[]
   eventRegistrations EventRegistration[]
+  mentorshipSlots    MentorshipSlot[]
+  bookedMentorshipSlots MentorshipSlot[] @relation("BookedMentorshipSlots")
+  submittedOpportunities PlacementOpportunity[]
+  placementOutcomes  PlacementOutcome[] @relation("StudentPlacementOutcomes")
+  recordedPlacements PlacementOutcome[] @relation("RecordedPlacementOutcomes")
 
   @@map("users")
 }
@@ -89,6 +97,8 @@ model Job {
   experienceRequired String?
   postedById    String
   postedBy      User     @relation(fields: [postedById], references: [id])
+  sourceOpportunityId String? @unique
+  sourceOpportunity PlacementOpportunity? @relation(fields: [sourceOpportunityId], references: [id])
   status        String   @default("OPEN")
   deadline      DateTime?
   applicantsCount Int    @default(0)
@@ -134,6 +144,63 @@ model Mentorship {
   updatedAt     DateTime @updatedAt
 
   @@map("mentorships")
+}
+
+model MentorshipSlot {
+  id          String   @id @default(cuid())
+  mentorId    String
+  mentor      User     @relation(fields: [mentorId], references: [id])
+  bookedById  String?
+  bookedBy    User?    @relation("BookedMentorshipSlots", fields: [bookedById], references: [id])
+  date        DateTime
+  timeSlot    String
+  duration    Int      @default(30)
+  topic       String?
+  status      String   @default("OPEN")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("mentorship_slots")
+}
+
+model PlacementOpportunity {
+  id            String   @id @default(cuid())
+  submittedById String
+  submittedBy   User     @relation(fields: [submittedById], references: [id])
+  title         String
+  company       String
+  type          String   @default("JOB")
+  department    String?
+  location      String?
+  description   String
+  applicationUrl String?
+  salaryMin    Float?
+  salaryMax    Float?
+  publishedJob Job?
+  status        String   @default("SUBMITTED")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("placement_opportunities")
+}
+
+model PlacementOutcome {
+  id          String   @id @default(cuid())
+  studentId   String
+  student     User     @relation("StudentPlacementOutcomes", fields: [studentId], references: [id])
+  createdById String
+  createdBy   User     @relation("RecordedPlacementOutcomes", fields: [createdById], references: [id])
+  company     String
+  title       String
+  packageAmount Float?
+  packageCurrency String @default("INR")
+  mode        String
+  status      String   @default("SELECTED")
+  placementDate DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("placement_outcomes")
 }
 
 model Event {

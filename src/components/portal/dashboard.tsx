@@ -1,12 +1,14 @@
 'use client'
 
-import { useState } from 'react'
-import { useAppStore } from '@/store/app-store'
-import { DEPARTMENTS } from '@/lib/departments'
+import { useEffect, useMemo, useState } from 'react'
+import { useAppStore, type EventItem, type User } from '@/store/app-store'
+import { DEPARTMENTS, getDepartmentChartLabel, normalizeDepartment } from '@/lib/departments'
+import { getGraduationYearOptions, getStartYearOptions, getStudyYearLabel, matchesGraduationYear, matchesStartYear, STUDY_YEAR_LABELS } from '@/lib/batches'
+import { RoleAnalyticsChart } from '@/components/portal/role-analytics-chart'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Progress } from '@/components/ui/progress'
 import {
   Briefcase,
@@ -28,6 +30,8 @@ import {
   BookOpen,
   MessageSquare,
   Shield,
+  ClipboardCheck,
+  Lightbulb,
 } from 'lucide-react'
 
 // --- Stat Card ---
@@ -97,6 +101,89 @@ function formatRelativeTime(dateStr: string): string {
 
 function formatDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+interface PublicPlacement {
+  id: string
+  company: string
+  title: string
+  packageAmount: number | null
+  packageCurrency: string
+  placementDate: string
+  student: Pick<User, 'name' | 'avatar' | 'department'>
+}
+
+function CommunityHighlights() {
+  const currentUser = useAppStore((state) => state.currentUser)
+  const events = useAppStore((state) => state.events)
+  const addToast = useAppStore((state) => state.addToast)
+  const [placements, setPlacements] = useState<PublicPlacement[]>([])
+  const upcomingEvents = useMemo(() => events
+    .filter((event: EventItem) => {
+      const end = new Date(event.endTime || event.date)
+      if (!event.endTime && event.time) {
+        const [hours, minutes] = event.time.split(':').map(Number)
+        end.setHours(hours || 0, minutes || 0, 0, 0)
+      } else if (!event.endTime) {
+        end.setHours(23, 59, 59, 999)
+      }
+      return end.getTime() >= Date.now()
+    })
+    .slice(0, 3), [events])
+
+  useEffect(() => {
+    if (!currentUser) return
+    let active = true
+    fetch(`/api/placements?actorId=${encodeURIComponent(currentUser.id)}&public=true`)
+      .then(async (response) => {
+        const data = await response.json()
+        if (!response.ok) throw new Error(data.error || 'Unable to load placement highlights')
+        if (active) setPlacements(Array.isArray(data) ? data : [])
+      })
+      .catch((error: unknown) => {
+        if (active) addToast(error instanceof Error ? error.message : 'Unable to load placement highlights', 'error')
+      })
+    return () => { active = false }
+  }, [addToast, currentUser])
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-2">
+      <Card>
+        <CardHeader><CardTitle className="text-base">Upcoming college events</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          {upcomingEvents.length === 0 ? <p className="text-sm text-muted-foreground">No upcoming events.</p> :
+            upcomingEvents.map((event) => (
+              <div key={event.id} className="flex items-start justify-between gap-3 border-b pb-3 last:border-0 last:pb-0">
+                <div className="min-w-0">
+                  <p className="font-medium">{event.title}</p>
+                  <p className="text-sm text-muted-foreground">{event.location || event.type}</p>
+                </div>
+                <span className="shrink-0 text-sm text-muted-foreground">{formatDate(event.date)}</span>
+              </div>
+            ))}
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader><CardTitle className="text-base">Recently placed students</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          {placements.length === 0 ? <p className="text-sm text-muted-foreground">No placement highlights available yet.</p> :
+            placements.map((record) => (
+              <div key={record.id} className="flex items-center gap-3 border-b pb-3 last:border-0 last:pb-0">
+                <Avatar className="h-10 w-10">
+                  <AvatarImage src={record.student.avatar || undefined} alt={record.student.name} />
+                  <AvatarFallback>{record.student.name.split(' ').map((part) => part[0]).join('').slice(0, 2)}</AvatarFallback>
+                </Avatar>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-medium">{record.student.name}</p>
+                  <p className="truncate text-sm text-muted-foreground">{record.student.department || 'Department not listed'} · {record.company} · {record.title}</p>
+                </div>
+                {record.packageAmount != null && <span className="shrink-0 text-sm font-medium">{record.packageCurrency} {record.packageAmount.toLocaleString('en-IN')}</span>}
+              </div>
+            ))}
+        </CardContent>
+      </Card>
+    </div>
+  )
 }
 
 // --- Student Dashboard ---
@@ -275,6 +362,10 @@ function AlumniDashboard() {
 
   const pendingRequests = mentorships.filter((m) => m.status === 'PENDING' && m.mentorId === currentUser.id)
   const recentEvents = events.slice(0, 3)
+  const mentorshipAnalytics = ['PENDING', 'ACCEPTED', 'COMPLETED', 'REJECTED'].map((status) => ({
+    label: status[0] + status.slice(1).toLowerCase(),
+    value: mentorships.filter((item) => item.mentorId === currentUser.id && item.status === status).length,
+  }))
 
   return (
     <div className="space-y-6">
@@ -291,6 +382,8 @@ function AlumniDashboard() {
         <StatCard icon={Brain} label="Mentorships" value={activeMentorships || '-'} color="bg-cyan-500" />
         <StatCard icon={Calendar} label="Events" value={totalEvents || '-'} color="bg-emerald-600" />
       </div>
+
+      <RoleAnalyticsChart title="My mentorship activity" data={mentorshipAnalytics} color="#0891b2" />
 
       {/* Quick Actions */}
       <div>
@@ -376,116 +469,133 @@ function AlumniDashboard() {
 // --- Recruiter Dashboard ---
 function RecruiterDashboard() {
   const currentUser = useAppStore((s) => s.currentUser)!
-  const analytics = useAppStore((s) => s.analytics)
   const jobs = useAppStore((s) => s.jobs)
-  const applications = useAppStore((s) => s.applications)
   const setCurrentView = useAppStore((s) => s.setCurrentView)
+  const addToast = useAppStore((s) => s.addToast)
+  const [placements, setPlacements] = useState<Array<{
+    id: string
+    company: string
+    title: string
+    packageAmount: number | null
+    packageCurrency: string
+    status: string
+    student: { id: string; name: string; department: string | null; batch: string | null; graduationYear: number | null }
+  }>>([])
+  const [departmentFilter, setDepartmentFilter] = useState('')
+  const [batchFilter, setBatchFilter] = useState('')
+  const [roleFilter, setRoleFilter] = useState('')
+  const [loadingPlacements, setLoadingPlacements] = useState(true)
+
+  useEffect(() => {
+    let active = true
+    fetch(`/api/placements?actorId=${encodeURIComponent(currentUser.id)}`)
+      .then(async (response) => {
+        const data = await response.json()
+        if (!response.ok) throw new Error(data.error || 'Unable to load company placement reports')
+        if (active) setPlacements(Array.isArray(data) ? data : [])
+      })
+      .catch((error: unknown) => {
+        if (active) addToast(error instanceof Error ? error.message : 'Unable to load company placement reports', 'error')
+      })
+      .finally(() => { if (active) setLoadingPlacements(false) })
+    return () => { active = false }
+  }, [addToast, currentUser.id])
 
   const companyName = currentUser.company || currentUser.name
   const openJobs = jobs.filter((j) => j.status === 'OPEN').length
-  const totalApplicants = applications.length
-  const totalUsers = analytics.find((a) => a.metric === 'total_users')?.value ?? 0
-  const totalEvents = analytics.find((a) => a.metric === 'total_events')?.value ?? 0
-
-  const recentApps = applications.slice(0, 4)
+  const departments = Array.from(new Set(placements
+    .map((record) => normalizeDepartment(record.student.department) || '')
+    .filter(Boolean))).sort()
+  const batches = Array.from(new Set(placements.flatMap((record) => [
+    record.student.batch,
+    record.student.graduationYear?.toString(),
+  ]).filter((value): value is string => !!value))).sort()
+  const roles = Array.from(new Set(placements.map((record) => record.title.trim()).filter(Boolean))).sort()
+  const filteredPlacements = placements.filter((record) =>
+    (!departmentFilter || normalizeDepartment(record.student.department) === departmentFilter) &&
+    (!batchFilter || record.student.graduationYear?.toString() === batchFilter || record.student.batch === batchFilter) &&
+    (!roleFilter || record.title === roleFilter),
+  )
+  const outcomeRecords = filteredPlacements.filter((record) => record.status === 'SELECTED' || record.status === 'PLACED')
+  const selectedCount = new Set(filteredPlacements.filter((record) => record.status === 'SELECTED').map((record) => record.student.id)).size
+  const placedCount = new Set(filteredPlacements.filter((record) => record.status === 'PLACED').map((record) => record.student.id)).size
+  const countStudentsBy = (getLabel: (record: (typeof placements)[number]) => string) => {
+    const studentsByLabel = new Map<string, Set<string>>()
+    for (const record of outcomeRecords) {
+      const label = getLabel(record)
+      const students = studentsByLabel.get(label) || new Set<string>()
+      students.add(record.student.id)
+      studentsByLabel.set(label, students)
+    }
+    return Array.from(studentsByLabel, ([label, students]) => ({ label, value: students.size }))
+  }
+  const departmentStatsByName = countStudentsBy((record) =>
+    normalizeDepartment(record.student.department) || 'Unspecified',
+  )
+  const departmentStats = departmentStatsByName.map((item) => ({
+    ...item,
+    label: getDepartmentChartLabel(item.label),
+  }))
+  const batchStats = countStudentsBy((record) =>
+    record.student.batch || record.student.graduationYear?.toString() || 'Batch not listed',
+  )
+  const roleStats = countStudentsBy((record) => record.title || 'Role not listed')
 
   return (
     <div className="space-y-6">
       {/* Welcome */}
       <div>
         <h1 className="text-2xl md:text-3xl font-bold">Welcome, {companyName}!</h1>
-        <p className="text-muted-foreground mt-1">Manage your job postings and track applicants.</p>
+        <p className="text-muted-foreground mt-1">Share opportunities with the placement cell and review your company&apos;s placement outcomes.</p>
       </div>
 
       {/* Stats Row */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard icon={Users} label="Total Users" value={totalUsers || '-'} color="bg-emerald-500" />
-        <StatCard icon={Briefcase} label="Open Jobs" value={openJobs || '-'} color="bg-teal-500" />
-        <StatCard icon={FileText} label="Applications" value={totalApplicants || '-'} color="bg-cyan-500" />
-        <StatCard icon={Calendar} label="Events" value={totalEvents || '-'} color="bg-emerald-600" />
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+        <StatCard icon={Briefcase} label="Open opportunities" value={openJobs} color="bg-teal-500" />
+        <StatCard icon={GraduationCap} label="Selected for your company" value={selectedCount} color="bg-amber-500" />
+        <StatCard icon={GraduationCap} label="Placed by your company" value={placedCount} color="bg-emerald-500" />
+        <StatCard icon={Users} label="Departments represented" value={departmentStats.length} color="bg-cyan-500" />
+        <StatCard icon={Calendar} label="Batches represented" value={batchStats.length} color="bg-emerald-600" />
       </div>
 
       {/* Quick Actions */}
       <div>
         <h2 className="text-lg font-semibold mb-3">Quick Actions</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <QuickActionCard icon={UserPlus} title="Post New Job" description="Create a new job listing" onClick={() => setCurrentView('post-job')} color="bg-emerald-500" />
-          <QuickActionCard icon={FileText} title="View Applications" description="Review candidate applications" onClick={() => setCurrentView('applications')} color="bg-teal-500" />
-          <QuickActionCard icon={Search} title="Search Candidates" description="Find candidates by skills" onClick={() => setCurrentView('candidate-search')} color="bg-cyan-500" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <QuickActionCard icon={MessageSquare} title="Share Opportunity" description="Send a job or internship lead to the placement cell for review" onClick={() => setCurrentView('opportunities')} color="bg-violet-500" />
+          <QuickActionCard icon={ClipboardCheck} title="Placement Analysis" description="Review students placed by department and batch" onClick={() => document.getElementById('recruiter-placement-analysis')?.scrollIntoView({ behavior: 'smooth' })} color="bg-cyan-500" />
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* My Posted Jobs */}
+      <div id="recruiter-placement-analysis" className="space-y-4">
+        <h2 className="text-lg font-semibold">Company placement analysis</h2>
+        <div className="flex flex-wrap gap-3">
+          <select aria-label="Filter by department" value={departmentFilter} onChange={(event) => setDepartmentFilter(event.target.value)} className="h-10 rounded-md border bg-background px-3 text-sm">
+            <option value="">All departments / branches</option>{departments.map((department) => <option key={department} value={department}>{department}</option>)}
+          </select>
+          <select aria-label="Filter by batch or graduation year" value={batchFilter} onChange={(event) => setBatchFilter(event.target.value)} className="h-10 rounded-md border bg-background px-3 text-sm">
+            <option value="">All batches / graduation years</option>{batches.map((batch) => <option key={batch} value={batch}>{batch}</option>)}
+          </select>
+          <select aria-label="Filter by role" value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)} className="h-10 rounded-md border bg-background px-3 text-sm">
+            <option value="">All roles</option>{roles.map((role) => <option key={role} value={role}>{role}</option>)}
+          </select>
+        </div>
+        {loadingPlacements ? <p className="text-sm text-muted-foreground">Loading placement analysis...</p> :
+          <div className="grid gap-6 lg:grid-cols-2">
+            <RoleAnalyticsChart title="Selected / placed students by department" data={departmentStats} color="#0d9488" />
+            <RoleAnalyticsChart title="Selected / placed students by batch" data={batchStats} color="#4f46e5" />
+            <RoleAnalyticsChart title="Selected / placed students by role" data={roleStats} color="#7c3aed" />
+          </div>}
         <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base font-semibold">My Posted Jobs</CardTitle>
-              <Button variant="ghost" size="sm" className="text-emerald-600 hover:text-emerald-500" onClick={() => setCurrentView('manage-jobs')}>
-                Manage <ArrowRight className="w-4 h-4 ml-1" />
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {jobs.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">No jobs posted yet.</p>
-            ) : (
-              <div className="space-y-1 max-h-72 overflow-y-auto">
-                {jobs.map((job) => (
-                  <div key={job.id} className="flex items-center gap-3 py-3 border-b last:border-0">
-                    <div className="w-10 h-10 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center flex-shrink-0">
-                      <Briefcase className="w-5 h-5 text-emerald-600" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium truncate">{job.title}</p>
-                      <p className="text-xs text-muted-foreground">{job.location} &middot; {job.type}</p>
-                    </div>
-                    <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                      <span className="text-xs font-medium">{job.applicantsCount} applicant{job.applicantsCount !== 1 ? 's' : ''}</span>
-                      <Badge variant={job.status === 'OPEN' ? 'default' : 'secondary'} className={`text-[10px] px-1.5 py-0 ${job.status === 'OPEN' ? 'bg-emerald-600' : ''}`}>
-                        {job.status}
-                      </Badge>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Recent Applications */}
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base font-semibold">Recent Applications</CardTitle>
-              <Button variant="ghost" size="sm" className="text-emerald-600 hover:text-emerald-500" onClick={() => setCurrentView('applications')}>
-                View All <ArrowRight className="w-4 h-4 ml-1" />
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {recentApps.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">No applications received yet.</p>
-            ) : (
-              <div className="space-y-1">
-                {recentApps.map((app) => (
-                  <div key={app.id} className="flex items-center gap-3 py-3 border-b last:border-0">
-                    <Avatar className="h-9 w-9">
-                      <AvatarFallback className="bg-teal-100 text-teal-700 text-xs">
-                        {(app.userName || '??').split(' ').map((n) => n[0]).join('').slice(0, 2)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium truncate">{app.userName || 'Candidate'}</p>
-                      <p className="text-xs text-muted-foreground truncate">{app.jobTitle || 'Unknown Job'}</p>
-                    </div>
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 flex-shrink-0">
-                      {app.status}
-                    </Badge>
-                  </div>
-                ))}
-              </div>
-            )}
+          <CardHeader><CardTitle className="text-base">Placement records</CardTitle></CardHeader>
+          <CardContent className="space-y-3">
+            {filteredPlacements.length === 0 ? <p className="text-sm text-muted-foreground">No placement records match these filters.</p> :
+              filteredPlacements.map((record) => (
+                <div key={record.id} className="flex flex-wrap items-center justify-between gap-2 border-b pb-3 last:border-0 last:pb-0">
+                  <div><p className="font-medium">{record.student.name} · {record.title}</p><p className="text-sm text-muted-foreground">{record.student.department || 'Department not listed'} · {record.student.graduationYear || record.student.batch || 'Batch not listed'}</p></div>
+                  <div className="text-right"><Badge variant="outline">{record.status}</Badge>{record.packageAmount != null && <p className="mt-1 text-sm">{record.packageCurrency} {record.packageAmount.toLocaleString('en-IN')}</p>}</div>
+                </div>
+              ))}
           </CardContent>
         </Card>
       </div>
@@ -503,22 +613,73 @@ function AdminDashboard() {
   const events = useAppStore((s) => s.events)
   const setCurrentView = useAppStore((s) => s.setCurrentView)
   const setAnalytics = useAppStore((s) => s.setAnalytics)
+  const addToast = useAppStore((s) => s.addToast)
   const [departmentFilter, setDepartmentFilter] = useState('')
+  const [startYearFilter, setStartYearFilter] = useState('')
+  const [graduationYearFilter, setGraduationYearFilter] = useState('')
+  const [loadingAnalytics, setLoadingAnalytics] = useState(false)
+  const isMainAdmin = currentUser.role === 'ADMIN' && currentUser.department === 'Administration'
+  const startYears = getStartYearOptions(users)
+  const graduationYears = getGraduationYearOptions(users)
 
   const totalUsers = analytics.find((a) => a.metric === 'total_users')?.value ?? users.length
   const totalJobs = analytics.find((a) => a.metric === 'open_jobs')?.value ?? jobs.length
   const totalApps = analytics.find((a) => a.metric === 'total_applications')?.value ?? applications.length
   const totalEvents = analytics.find((a) => a.metric === 'total_events')?.value ?? events.length
 
-  const recentUsers = users.slice(0, 5)
+  const recentUsers = users.filter((user) =>
+    (!departmentFilter || normalizeDepartment(user.department) === normalizeDepartment(departmentFilter)) &&
+    (!startYearFilter || matchesStartYear(user, Number(startYearFilter))) &&
+    (!graduationYearFilter || matchesGraduationYear(user, Number(graduationYearFilter))),
+  ).slice(0, 5)
+  const distributionUsers = users.filter((user) =>
+    (!departmentFilter || normalizeDepartment(user.department) === normalizeDepartment(departmentFilter)) &&
+    (!startYearFilter || matchesStartYear(user, Number(startYearFilter))) &&
+    (!graduationYearFilter || matchesGraduationYear(user, Number(graduationYearFilter))),
+  )
+  const studyYearCounts = new Map<string, number>()
+  const roleCounts = new Map<string, number>()
+  for (const user of distributionUsers) {
+    const studyYear = getStudyYearLabel(user)
+    if (studyYear) studyYearCounts.set(studyYear, (studyYearCounts.get(studyYear) || 0) + 1)
+    roleCounts.set(user.role, (roleCounts.get(user.role) || 0) + 1)
+  }
+  const studyYearData = STUDY_YEAR_LABELS
+    .filter((label) => studyYearCounts.has(label))
+    .map((label) => ({ label, value: studyYearCounts.get(label) || 0 }))
+  const roleData = Array.from(roleCounts, ([label, value]) => ({ label: label.replace('_', ' '), value }))
 
-  const handleDepartmentFilter = async (department: string) => {
+  const handleDashboardFilters = async (department: string, startYear: string, graduationYear: string) => {
     setDepartmentFilter(department)
-    const res = await fetch(department ? `/api/analytics?department=${encodeURIComponent(department)}` : '/api/analytics')
-    if (res.ok) setAnalytics(await res.json())
+    setStartYearFilter(startYear)
+    setGraduationYearFilter(graduationYear)
+    const params = new URLSearchParams({ actorId: currentUser.id })
+    if (department) params.set('department', department)
+    if (startYear) params.set('startYear', startYear)
+    if (graduationYear) params.set('graduationYear', graduationYear)
+    const query = params.size > 0 ? `?${params.toString()}` : ''
+    setLoadingAnalytics(true)
+    try {
+      const response = await fetch(`/api/analytics${query}`)
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Unable to load dashboard analytics')
+      setAnalytics(data)
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : 'Unable to load dashboard analytics', 'error')
+    } finally {
+      setLoadingAnalytics(false)
+    }
   }
 
   const roleLabel = currentUser.role === 'PLACEMENT_CELL' ? 'Placement Cell' : 'Admin'
+  const adminChartData = [
+    { label: 'Students', value: analytics.find((a) => a.metric === 'total_students')?.value ?? 0 },
+    { label: 'Alumni', value: analytics.find((a) => a.metric === 'total_alumni')?.value ?? 0 },
+    { label: 'Recruiters', value: analytics.find((a) => a.metric === 'total_recruiters')?.value ?? 0 },
+    { label: 'Open jobs', value: analytics.find((a) => a.metric === 'open_jobs')?.value ?? 0 },
+    { label: 'On campus', value: analytics.find((a) => a.metric === 'on_campus_placements')?.value ?? 0 },
+    { label: 'Off campus', value: analytics.find((a) => a.metric === 'off_campus_placements')?.value ?? 0 },
+  ]
 
   return (
     <div className="space-y-6">
@@ -528,13 +689,39 @@ function AdminDashboard() {
         <p className="text-muted-foreground mt-1">Overview of the AlumniNexus platform activity.</p>
       </div>
 
-      {currentUser.role === 'ADMIN' && currentUser.department === 'Administration' && (
-        <div className="flex items-center gap-3">
-          <label htmlFor="dashboard-department" className="text-sm font-medium">Department view</label>
-          <select id="dashboard-department" value={departmentFilter} onChange={(event) => handleDepartmentFilter(event.target.value)} className="h-10 rounded-md border bg-background px-3 text-sm">
-            <option value="">All Departments</option>
-            {DEPARTMENTS.map((department) => <option key={department} value={department}>{department}</option>)}
-          </select>
+      {(currentUser.role === 'PLACEMENT_CELL' || (currentUser.role === 'ADMIN' && currentUser.department === 'Administration')) && (
+        <div className="flex flex-wrap items-center gap-3">
+          {currentUser.role === 'PLACEMENT_CELL' && (
+            <select aria-label="Department view" value={departmentFilter} onChange={(event) => handleDashboardFilters(event.target.value, startYearFilter, graduationYearFilter)} className="h-10 rounded-md border bg-background px-3 text-sm">
+              <option value="">All Departments</option>
+              {DEPARTMENTS.map((department) => <option key={department} value={department}>{department}</option>)}
+            </select>
+          )}
+          {currentUser.role === 'ADMIN' && currentUser.department === 'Administration' && (
+            <>
+              <label htmlFor="dashboard-department" className="text-sm font-medium">Department view</label>
+              <select id="dashboard-department" value={departmentFilter} onChange={(event) => handleDashboardFilters(event.target.value, startYearFilter, graduationYearFilter)} className="h-10 rounded-md border bg-background px-3 text-sm">
+                <option value="">All Departments</option>
+                {DEPARTMENTS.map((department) => <option key={department} value={department}>{department}</option>)}
+              </select>
+            </>
+          )}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label htmlFor="dashboard-start-year" className="text-sm font-medium">Intake</label>
+              <select id="dashboard-start-year" value={startYearFilter} onChange={(event) => handleDashboardFilters(departmentFilter, event.target.value, graduationYearFilter)} className="h-10 w-full rounded-md border bg-background px-3 text-sm">
+                <option value="">All Intake Years</option>
+                {startYears.map((year) => <option key={year} value={year}>{year}</option>)}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label htmlFor="dashboard-graduation-year" className="text-sm font-medium">Graduation</label>
+              <select id="dashboard-graduation-year" value={graduationYearFilter} onChange={(event) => handleDashboardFilters(departmentFilter, startYearFilter, event.target.value)} className="h-10 w-full rounded-md border bg-background px-3 text-sm">
+                <option value="">All Graduation Years</option>
+                {graduationYears.map((year) => <option key={year} value={year}>{year}</option>)}
+              </select>
+            </div>
+          </div>
         </div>
       )}
 
@@ -546,6 +733,14 @@ function AdminDashboard() {
         <StatCard icon={Calendar} label="Events" value={totalEvents || 0} color="bg-emerald-600" />
       </div>
 
+      <RoleAnalyticsChart title="Placement and platform overview" data={adminChartData} />
+      {currentUser.role === 'ADMIN' && (
+        <div className="grid gap-6 lg:grid-cols-2">
+          <RoleAnalyticsChart title="Student and alumni distribution by class" data={studyYearData} color="#0891b2" />
+          {isMainAdmin && <RoleAnalyticsChart title="User distribution by role" data={roleData} color="#7c3aed" />}
+        </div>
+      )}
+
       {/* Quick Actions */}
       <div>
         <h2 className="text-lg font-semibold mb-3">Quick Actions</h2>
@@ -553,15 +748,18 @@ function AdminDashboard() {
           {currentUser.role === 'ADMIN' && (
             <QuickActionCard icon={Shield} title="Manage Users" description="View, edit, and manage user accounts" onClick={() => setCurrentView('user-management')} color="bg-emerald-500" />
           )}
+          <QuickActionCard icon={ClipboardCheck} title="Placement Records" description="Manage department and batch placement outcomes" onClick={() => setCurrentView('placements')} color="bg-indigo-500" />
           <QuickActionCard icon={BarChart3} title="View Reports" description="Access detailed analytics and reports" onClick={() => setCurrentView('analytics')} color="bg-teal-500" />
           {currentUser.role === 'PLACEMENT_CELL' && (
             <>
+              <QuickActionCard icon={Lightbulb} title="Review Opportunities" description="Review leads shared by alumni and recruiters" onClick={() => setCurrentView('opportunities')} color="bg-violet-500" />
               <QuickActionCard icon={Building} title="Alumni Directory" description="Browse the alumni network" onClick={() => setCurrentView('alumni-directory')} color="bg-cyan-500" />
               <QuickActionCard icon={Calendar} title="Manage Events" description="Create and manage events" onClick={() => setCurrentView('events')} color="bg-emerald-600" />
             </>
           )}
         </div>
       </div>
+      {loadingAnalytics && <p className="text-xs text-muted-foreground" role="status">Updating dashboard metrics…</p>}
 
       {/* Recent User Registrations */}
       <Card>
@@ -631,15 +829,15 @@ export function DashboardView() {
 
   switch (currentUser.role) {
     case 'STUDENT':
-      return <StudentDashboard />
+      return <><StudentDashboard /><CommunityHighlights /></>
     case 'ALUMNI':
-      return <AlumniDashboard />
+      return <><AlumniDashboard /><CommunityHighlights /></>
     case 'RECRUITER':
-      return <RecruiterDashboard />
+      return <><RecruiterDashboard /><CommunityHighlights /></>
     case 'ADMIN':
     case 'PLACEMENT_CELL':
-      return <AdminDashboard />
+      return <><AdminDashboard /><CommunityHighlights /></>
     default:
-      return <StudentDashboard />
+      return <><StudentDashboard /><CommunityHighlights /></>
   }
 }

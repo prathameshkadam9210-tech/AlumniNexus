@@ -1,5 +1,6 @@
 import { db } from '@/lib/db'
-import { getCanonicalDepartment, getDepartmentAliases } from '@/lib/departments'
+import { getGraduationYear, getStartYear } from '@/lib/batches'
+import { getDepartmentAliases, normalizeDepartment } from '@/lib/departments'
 import { isEmailConfigured, sendAccountStatusEmail, sendOtpEmail } from '@/lib/email'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -22,45 +23,25 @@ function canManageUser(actor: { id: string; role: string; department: string | n
   if (actor.id === target.id) return true
   if (actor.role === 'ADMIN' && actor.department === 'Administration') return true
   if (actor.role === 'ADMIN' && actor.department &&
-    getCanonicalDepartment(actor.department) === getCanonicalDepartment(target.department)) {
+    normalizeDepartment(actor.department) === normalizeDepartment(target.department)) {
     return target.role === 'STUDENT' || target.role === 'ALUMNI' || target.role === 'ADMIN'
   }
-  return (actor.role === 'PLACEMENT_CELL' || actor.role === 'RECRUITER') && target.role === 'STUDENT'
+  return actor.role === 'PLACEMENT_CELL' && target.role === 'STUDENT'
 }
 
 // POST - Login / Signup
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { action, email, password, name, role, department, batch, graduationYear, company, designation, phone, skills } = body
+    const { action, email, password, name, role, department, batch, startYear, graduationYear, company, designation, phone, skills, gender } = body
 
     if (action === 'login') {
-      if (!email || !password) {
+      if (typeof email !== 'string' || !email.trim() || typeof password !== 'string' || !password) {
         return NextResponse.json({ error: 'Email and password are required' }, { status: 400 })
       }
 
-      const loginEmail = typeof email === 'string' ? email.trim().toLowerCase() : email
-      let user = await db.user.findUnique({ where: { email: loginEmail } })
-      let migrateAidsAdminEmail = false
-
-      if (!user && loginEmail === 'aidsadmin@jjmcoe.ac.in') {
-        const legacyUsers = await db.user.findMany({
-          where: {
-            email: {
-              in: [
-                'aidsadmin@gmail.ac.in',
-                'aidsasdmin@jjmcoe.ac.in',
-                'aidsasmin@jjmcoe.ac.in',
-              ],
-            },
-            role: 'ADMIN',
-          },
-        })
-        user = legacyUsers.find(
-          (candidate) => getCanonicalDepartment(candidate.department) === 'Artificial Intelligence and Data Science (AIDS)'
-        ) ?? null
-        migrateAidsAdminEmail = Boolean(user)
-      }
+      const normalizedEmail = email.trim().toLowerCase()
+      const user = await db.user.findUnique({ where: { email: normalizedEmail } })
 
       if (!user) {
         return NextResponse.json(
@@ -70,21 +51,14 @@ export async function POST(req: NextRequest) {
       }
 
       // Check password
-      if (user.password && user.password !== password && user.password !== 'demo') {
+      if (!user.password || user.password !== password) {
         return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 })
       }
 
-      if (migrateAidsAdminEmail) {
-        user = await db.user.update({
-          where: { id: user.id },
-          data: { email: 'aidsadmin@jjmcoe.ac.in' },
-        })
-      }
-
       // Check if email is verified (only for college emails)
-      if (isValidCollegeEmail(loginEmail) && !user.emailVerified) {
+      if (isValidCollegeEmail(user.email) && !user.emailVerified) {
         return NextResponse.json(
-          { error: 'Please verify your email first. An OTP was sent to your email.', needsVerification: true, email: loginEmail },
+          { error: 'Please verify your email first. An OTP was sent to your email.', needsVerification: true, email: user.email },
           { status: 403 }
         )
       }
@@ -112,9 +86,10 @@ export async function POST(req: NextRequest) {
         name: user.name,
         role: user.role,
         avatar: user.avatar,
+        gender: user.gender,
         phone: user.phone,
         bio: user.bio,
-        department: getCanonicalDepartment(user.department),
+        department: normalizeDepartment(user.department),
         batch: user.batch,
         graduationYear: user.graduationYear,
         company: user.company,
@@ -134,9 +109,16 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === 'signup') {
-      if (!email || !name) {
+      if (typeof email !== 'string' || !email.trim() || typeof name !== 'string' || !name.trim()) {
         return NextResponse.json({ error: 'Email and name are required' }, { status: 400 })
       }
+      if (gender != null && !['FEMALE', 'MALE', 'NON_BINARY', 'PREFER_NOT_TO_SAY'].includes(gender)) {
+        return NextResponse.json({ error: 'Select a valid gender option.' }, { status: 400 })
+      }
+      if (typeof password !== 'string' || password.length < 6) {
+        return NextResponse.json({ error: 'Password must be at least 6 characters' }, { status: 400 })
+      }
+      const normalizedEmail = email.trim().toLowerCase()
 
       const signupRole = role || 'STUDENT'
 
@@ -144,7 +126,7 @@ export async function POST(req: NextRequest) {
       const studentOrAlumniRoles = ['STUDENT', 'ALUMNI']
       if (studentOrAlumniRoles.includes(signupRole)) {
         // Students and Alumni MUST use the official college email domain
-        if (!isValidCollegeEmail(email)) {
+        if (!isValidCollegeEmail(normalizedEmail)) {
           return NextResponse.json(
             {
               error: `Students and Alumni must register with their official college email ending with ${VALID_EMAIL_DOMAIN}. Example: yourname@jjmcoe.ac.in`,
@@ -155,9 +137,20 @@ export async function POST(req: NextRequest) {
         if (!department) {
           return NextResponse.json({ error: 'Please select your department.' }, { status: 400 })
         }
+        const intakeYear = Number(startYear)
+        const expectedGraduationYear = Number(graduationYear)
+        if (
+          !Number.isInteger(intakeYear) ||
+          !Number.isInteger(expectedGraduationYear) ||
+          intakeYear < 1992 ||
+          expectedGraduationYear < intakeYear ||
+          expectedGraduationYear > new Date().getFullYear() + 10
+        ) {
+          return NextResponse.json({ error: 'Select a valid intake year and graduation year.' }, { status: 400 })
+        }
       }
 
-      const existing = await db.user.findUnique({ where: { email } })
+      const existing = await db.user.findUnique({ where: { email: normalizedEmail } })
       if (existing) {
         return NextResponse.json({ error: 'Email already registered' }, { status: 409 })
       }
@@ -167,25 +160,29 @@ export async function POST(req: NextRequest) {
       const otpExpiry = new Date(Date.now() + 10 * 60 * 1000) // 10 minutes
 
       // Create user with emailVerified = false (needs OTP verification)
-      const signupDepartment = getCanonicalDepartment(department) || 'Information Technology (IT)'
+      const normalizedDepartment = normalizeDepartment(department || 'Information Technology')
+      const normalizedBatch = studentOrAlumniRoles.includes(signupRole)
+        ? `${Number(startYear)}-${Number(graduationYear)}`
+        : batch || ''
       const user = await db.user.create({
         data: {
-          email,
-          password: password || 'demo',
+          email: normalizedEmail,
+          password,
           name,
           role: signupRole,
-          department: signupDepartment,
-          batch: batch || '',
-          graduationYear: graduationYear || null,
+          gender: gender || null,
+          department: normalizedDepartment,
+          batch: normalizedBatch,
+          graduationYear: studentOrAlumniRoles.includes(signupRole) ? Number(graduationYear) : null,
           company: company || '',
           designation: designation || '',
           phone: phone || '',
           skills: skills || '',
           isVerified: !studentOrAlumniRoles.includes(signupRole),
           verificationStatus: studentOrAlumniRoles.includes(signupRole) ? 'PENDING' : 'APPROVED',
-          emailVerified: isValidCollegeEmail(email) ? false : true, // College emails need verification
-          verificationOtp: isValidCollegeEmail(email) ? otp : null,
-          otpExpiry: isValidCollegeEmail(email) ? otpExpiry : null,
+          emailVerified: isValidCollegeEmail(normalizedEmail) ? false : true, // College emails need verification
+          verificationOtp: isValidCollegeEmail(normalizedEmail) ? otp : null,
+          otpExpiry: isValidCollegeEmail(normalizedEmail) ? otpExpiry : null,
         },
       })
 
@@ -193,14 +190,17 @@ export async function POST(req: NextRequest) {
         const admins = await db.user.findMany({
           where: {
             role: 'ADMIN',
-            OR: [{ department: 'Administration' }, { department: { in: getDepartmentAliases(signupDepartment) } }],
+            OR: [
+              { department: 'Administration' },
+              { department: { in: getDepartmentAliases(normalizedDepartment || '') } },
+            ],
           },
         })
         await Promise.all(admins.map((admin) => db.notification.create({
           data: {
             userId: admin.id,
             title: 'New account awaiting approval',
-            message: `${user.name} (${user.email}) registered for ${signupDepartment}. Review and approve this account.`,
+            message: `${user.name} (${user.email}) registered for ${normalizedDepartment}. Review and approve this account.`,
             type: 'USER_VERIFICATION',
             link: 'user-management',
           },
@@ -210,13 +210,13 @@ export async function POST(req: NextRequest) {
       let emailSent = false
       if (isEmailConfigured()) {
         try {
-          await sendOtpEmail({ to: email, otp, purpose: 'verification' })
+          await sendOtpEmail({ to: normalizedEmail, otp, purpose: 'verification' })
           emailSent = true
         } catch (error) {
           console.error('Verification email error:', error)
         }
       } else {
-        console.log(`Verification OTP for ${email}: ${otp} (expires in 10 minutes)`)
+        console.log(`Verification OTP for ${normalizedEmail}: ${otp} (expires in 10 minutes)`)
       }
 
       return NextResponse.json({
@@ -224,7 +224,8 @@ export async function POST(req: NextRequest) {
         email: user.email,
         name: user.name,
         role: user.role,
-        department: getCanonicalDepartment(user.department),
+        gender: user.gender,
+        department: normalizeDepartment(user.department),
         isVerified: user.isVerified,
         verificationStatus: user.isVerified ? 'APPROVED' : user.verificationStatus,
         emailVerified: user.emailVerified,
@@ -234,8 +235,8 @@ export async function POST(req: NextRequest) {
         message: user.emailVerified
           ? 'Account created successfully!'
           : emailSent
-            ? `OTP sent to ${email}. Verify your email to complete registration.`
-            : `OTP generated for ${email}. Add SMTP settings to send it by email.`,
+            ? `OTP sent to ${normalizedEmail}. Verify your email to complete registration.`
+            : `OTP generated for ${normalizedEmail}. Add SMTP settings to send it by email.`,
         ...(!emailSent && !isEmailConfigured() ? { demoOTP: otp } : {}),
       })
     }
@@ -266,7 +267,7 @@ export async function GET(req: NextRequest) {
         ? undefined
         : actor.role === 'ADMIN' && actor.department
           ? { department: { in: getDepartmentAliases(actor.department) }, role: { in: ['STUDENT', 'ALUMNI', 'ADMIN'] } }
-          : actor.role === 'PLACEMENT_CELL' || actor.role === 'RECRUITER'
+          : actor.role === 'PLACEMENT_CELL'
             ? { role: 'STUDENT' }
             : { id: actor.id }
       const users = await db.user.findMany({
@@ -276,13 +277,14 @@ export async function GET(req: NextRequest) {
           department: true, batch: true, graduationYear: true, company: true, designation: true,
           experience: true, location: true, skills: true, resumeUrl: true, linkedinUrl: true,
           gpa: true, isVerified: true, verificationStatus: true, emailVerified: true, isOnline: true,
+          finalYearResultUrl: true, alumniChoice: true,
           createdAt: true, updatedAt: true,
         },
         orderBy: { createdAt: 'desc' },
       })
       return NextResponse.json(users.map(u => ({
         ...u,
-        department: getCanonicalDepartment(u.department),
+        department: normalizeDepartment(u.department),
         verificationStatus: u.isVerified ? 'APPROVED' : u.verificationStatus,
         createdAt: u.createdAt.toISOString(),
         updatedAt: u.updatedAt.toISOString(),
@@ -296,7 +298,7 @@ export async function GET(req: NextRequest) {
       })
       return NextResponse.json(alumni.map(u => ({
         ...u,
-        department: getCanonicalDepartment(u.department),
+        department: normalizeDepartment(u.department),
         verificationStatus: u.isVerified ? 'APPROVED' : u.verificationStatus,
         createdAt: u.createdAt.toISOString(),
         updatedAt: u.updatedAt.toISOString(),
@@ -308,12 +310,12 @@ export async function GET(req: NextRequest) {
       if (!userId) return NextResponse.json({ error: 'User ID required' }, { status: 400 })
       const user = await db.user.findUnique({
         where: { id: userId },
-        select: { id: true, role: true, department: true, isVerified: true, verificationStatus: true, batch: true, graduationYear: true },
+        select: { id: true, role: true, isVerified: true, verificationStatus: true, department: true, batch: true, graduationYear: true },
       })
       if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
       return NextResponse.json({
         ...user,
-        department: getCanonicalDepartment(user.department),
+        department: normalizeDepartment(user.department),
         verificationStatus: user.isVerified ? 'APPROVED' : user.verificationStatus,
       })
     }
@@ -331,6 +333,7 @@ export async function GET(req: NextRequest) {
             department: true, batch: true, graduationYear: true, company: true, designation: true,
             experience: true, location: true, skills: true, resumeUrl: true, linkedinUrl: true,
             gpa: true, isVerified: true, verificationStatus: true, emailVerified: true, isOnline: true,
+            finalYearResultUrl: true, alumniChoice: true,
             createdAt: true, updatedAt: true,
           },
         }),
@@ -341,7 +344,7 @@ export async function GET(req: NextRequest) {
       }
       return NextResponse.json({
         ...user,
-        department: getCanonicalDepartment(user.department),
+        department: normalizeDepartment(user.department),
         verificationStatus: user.isVerified ? 'APPROVED' : user.verificationStatus,
         createdAt: user.createdAt.toISOString(),
         updatedAt: user.updatedAt.toISOString(),
@@ -375,13 +378,16 @@ export async function PUT(req: NextRequest) {
     if (typeof data.email === 'string' && data.email.trim().toLowerCase() !== existingUser.email.toLowerCase()) {
       return NextResponse.json({ error: 'Verify your new email address before saving it.' }, { status: 409 })
     }
+    if (data.gender != null && !['FEMALE', 'MALE', 'NON_BINARY', 'PREFER_NOT_TO_SAY'].includes(data.gender)) {
+      return NextResponse.json({ error: 'Select a valid gender option.' }, { status: 400 })
+    }
 
     const promoteToAlumni = data.role === 'ALUMNI'
     const verificationChange = typeof data.isVerified === 'boolean' &&
       (existingUser.role === 'STUDENT' || existingUser.role === 'ALUMNI')
     const isDepartmentAdmin = actor.role === 'ADMIN' && (
       actor.department === 'Administration' ||
-      (!!actor.department && getCanonicalDepartment(actor.department) === getCanonicalDepartment(existingUser.department))
+      (!!actor.department && normalizeDepartment(actor.department) === normalizeDepartment(existingUser.department))
     )
     if ((verificationChange || promoteToAlumni) && !isDepartmentAdmin) {
       return NextResponse.json({ error: "Only the main admin or the student's department admin can manage verification and alumni status." }, { status: 403 })
@@ -403,7 +409,37 @@ export async function PUT(req: NextRequest) {
 
       graduationYear = year
     }
-    const passoutBatch = graduationYear ? `${graduationYear - 1}-${graduationYear} passout batch` : undefined
+    const existingStartYear = getStartYear(existingUser.batch)
+    if (promoteToAlumni && graduationYear && existingStartYear && graduationYear < existingStartYear) {
+      return NextResponse.json({ error: 'Graduation year cannot be earlier than the original intake year.' }, { status: 400 })
+    }
+
+    let updatedBatch: string | undefined
+    let updatedGraduationYear: number | null | undefined
+    if (promoteToAlumni && graduationYear) {
+      updatedBatch = `${existingStartYear ?? graduationYear}-${graduationYear}`
+      updatedGraduationYear = graduationYear
+    } else if (data.startYear !== undefined || data.graduationYear !== undefined) {
+      const submittedBatch = typeof data.batch === 'string' ? data.batch : existingUser.batch
+      const startYear = data.startYear === undefined ? getStartYear(submittedBatch) : Number(data.startYear)
+      const requestedGraduationYear = data.graduationYear === undefined
+        ? getGraduationYear(existingUser.batch, existingUser.graduationYear)
+        : Number(data.graduationYear)
+      if (
+        (existingUser.role === 'STUDENT' || existingUser.role === 'ALUMNI') &&
+        (typeof startYear !== 'number' || !Number.isInteger(startYear) || startYear < 1992 ||
+          typeof requestedGraduationYear !== 'number' || !Number.isInteger(requestedGraduationYear) ||
+          requestedGraduationYear < startYear || requestedGraduationYear > new Date().getFullYear() + 10)
+      ) {
+        return NextResponse.json({ error: 'Select a valid intake year and graduation year.' }, { status: 400 })
+      }
+      if (typeof startYear === 'number' && typeof requestedGraduationYear === 'number') {
+        updatedBatch = `${startYear}-${requestedGraduationYear}`
+        updatedGraduationYear = requestedGraduationYear
+      }
+    } else if (typeof data.batch === 'string') {
+      updatedBatch = data.batch
+    }
 
     const user = await db.user.update({
       where: { id: userId },
@@ -411,13 +447,12 @@ export async function PUT(req: NextRequest) {
         role: promoteToAlumni ? 'ALUMNI' : undefined,
         name: data.name,
         email: data.email,
+        gender: data.gender,
         phone: data.phone,
         bio: data.bio,
-        department: typeof data.department === 'string'
-          ? getCanonicalDepartment(data.department)
-          : data.department,
-        batch: promoteToAlumni ? passoutBatch : data.batch,
-        graduationYear: promoteToAlumni ? graduationYear : data.graduationYear,
+        department: typeof data.department === 'string' ? normalizeDepartment(data.department) : data.department,
+        batch: updatedBatch,
+        graduationYear: updatedGraduationYear ?? data.graduationYear,
         company: data.company,
         designation: data.designation,
         experience: data.experience,
@@ -448,7 +483,7 @@ export async function PUT(req: NextRequest) {
 
     return NextResponse.json({
       ...user,
-      department: getCanonicalDepartment(user.department),
+      department: normalizeDepartment(user.department),
       verificationStatus: user.isVerified ? 'APPROVED' : user.verificationStatus,
       createdAt: user.createdAt.toISOString(),
     })

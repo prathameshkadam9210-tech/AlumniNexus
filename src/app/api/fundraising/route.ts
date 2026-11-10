@@ -1,4 +1,6 @@
 import { db } from '@/lib/db'
+import { getBatchWhereFilter } from '@/lib/batches'
+import { getDepartmentAliases } from '@/lib/departments'
 import { getDonationPurposeLabel, IDEA_LAB_PURPOSE } from '@/lib/donation-purposes'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -10,12 +12,38 @@ function getDonationPurpose(purpose: string | null, description: string): string
   return legacyPurpose || 'Unspecified'
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    const searchParams = new URL(req.url).searchParams
+    const actorId = searchParams.get('actorId')
+    const department = searchParams.get('department')
+    const batchValue = searchParams.get('batch')
+    const graduationYearValue = searchParams.get('graduationYear') || batchValue
+    const startYearValue = searchParams.get('startYear')
+    const graduationYear = graduationYearValue && /^\d{4}$/.test(graduationYearValue) ? Number(graduationYearValue) : undefined
+    const startYear = startYearValue && /^\d{4}$/.test(startYearValue) ? Number(startYearValue) : undefined
+    const hasFilters = Boolean(department || startYear || graduationYear)
+    if (hasFilters) {
+      const actor = actorId
+        ? await db.user.findUnique({ where: { id: actorId }, select: { role: true, department: true } })
+        : null
+      if (actor?.role !== 'ADMIN' || actor.department !== 'Administration') {
+        return NextResponse.json({ error: 'Only the main admin can filter fundraising totals' }, { status: 403 })
+      }
+    }
+
+    const userFilter = {
+      ...(department ? { department: { in: getDepartmentAliases(department) } } : {}),
+      ...(startYear || graduationYear ? getBatchWhereFilter({ startYear, graduationYear }) : {}),
+    }
     const [goal, donations] = await Promise.all([
       db.fundraisingGoal.findUnique({ where: { key: IDEA_LAB_GOAL_KEY } }),
       db.payment.findMany({
-        where: { type: 'DONATION', status: 'COMPLETED' },
+        where: {
+          type: 'DONATION',
+          status: 'COMPLETED',
+          ...(hasFilters ? { user: userFilter } : {}),
+        },
         select: { amount: true, purpose: true, description: true },
       }),
     ])
