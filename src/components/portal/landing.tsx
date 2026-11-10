@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import { useAppStore, type UserRole } from '@/store/app-store'
+import { useAppStore, type UserGender, type UserRole } from '@/store/app-store'
 import { DEPARTMENTS } from '@/lib/departments'
+import { getGraduationYearOptions, getStartYearOptions } from '@/lib/batches'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -40,6 +41,8 @@ import {
   CheckCircle2,
   AlertCircle,
   Clock,
+  Eye,
+  EyeOff,
 } from 'lucide-react'
 
 const ROLE_LABELS: Record<UserRole, string> = {
@@ -83,15 +86,20 @@ export function LandingPage() {
   // Login
   const [loginEmail, setLoginEmail] = useState('')
   const [loginPassword, setLoginPassword] = useState('')
+  const [showLoginPassword, setShowLoginPassword] = useState(false)
 
   // Register
   const [regName, setRegName] = useState('')
   const [regEmail, setRegEmail] = useState('')
   const [regPassword, setRegPassword] = useState('')
+  const [showRegPassword, setShowRegPassword] = useState(false)
   const [regRole, setRegRole] = useState<UserRole>('STUDENT')
   const [regDepartment, setRegDepartment] = useState('')
+  const [regStartYear, setRegStartYear] = useState('')
+  const [regGraduationYear, setRegGraduationYear] = useState('')
   const [regPhone, setRegPhone] = useState('')
   const [regSkills, setRegSkills] = useState('')
+  const [regGender, setRegGender] = useState<UserGender | ''>('')
 
   // OTP Verification
   const [otpDigits, setOtpDigits] = useState(['', '', '', '', '', ''])
@@ -169,6 +177,14 @@ export function LandingPage() {
       addToast('Password must be at least 6 characters', 'error')
       return
     }
+    if (needsCollegeEmail(regRole)) {
+      const startYear = Number(regStartYear)
+      const graduationYear = Number(regGraduationYear)
+      if (!Number.isInteger(startYear) || !Number.isInteger(graduationYear) || startYear < 1992 || graduationYear < startYear) {
+        addToast('Select a valid intake year and a graduation year no earlier than the intake year.', 'error')
+        return
+      }
+    }
 
     // If college email, show OTP verification after registration
     if (needsCollegeEmail(regRole)) {
@@ -176,7 +192,19 @@ export function LandingPage() {
       const res = await fetch('/api/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'signup', name: regName, email: regEmail, password: regPassword, role: regRole, department: regDepartment, phone: regPhone, skills: regSkills }),
+        body: JSON.stringify({
+          action: 'signup',
+          name: regName,
+          email: regEmail,
+          password: regPassword,
+          role: regRole,
+          department: regDepartment,
+          batch: `${regStartYear}-${regGraduationYear}`,
+          graduationYear: Number(regGraduationYear),
+          phone: regPhone,
+          skills: regSkills,
+          gender: regGender || undefined,
+        }),
       })
       if (res.ok) {
         const data = await res.json()
@@ -199,6 +227,7 @@ export function LandingPage() {
     const ok = await signup({
       name: regName, email: regEmail, password: regPassword, role: regRole,
       department: regDepartment || undefined, phone: regPhone || undefined, skills: regSkills || undefined,
+      gender: regGender || undefined,
     })
     if (ok) setAuthOpen(false)
   }
@@ -494,7 +523,18 @@ export function LandingPage() {
           </div>
           <div className="space-y-2">
             <Label htmlFor="login-password">Password</Label>
-            <Input id="login-password" type="password" placeholder="Enter your password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleLogin()} />
+            <div className="relative">
+              <Input id="login-password" type={showLoginPassword ? 'text' : 'password'} placeholder="Enter your password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleLogin()} className="pr-10" />
+              <button
+                type="button"
+                aria-label={showLoginPassword ? 'Hide password' : 'Show password'}
+                aria-pressed={showLoginPassword}
+                onClick={() => setShowLoginPassword((visible) => !visible)}
+                className="absolute inset-y-0 right-0 flex items-center px-3 text-muted-foreground hover:text-foreground"
+              >
+                {showLoginPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
           </div>
           <div className="flex justify-end">
             <Button variant="link" className="text-emerald-600 p-0 h-auto text-sm" onClick={() => { setForgotEmail(loginEmail); setAuthView('forgot-password') }}>
@@ -538,6 +578,18 @@ export function LandingPage() {
             <Input id="reg-name" placeholder="John Doe" value={regName} onChange={(e) => setRegName(e.target.value)} />
           </div>
           <div className="space-y-2">
+            <Label htmlFor="reg-gender">Gender (optional)</Label>
+            <Select value={regGender} onValueChange={(value) => setRegGender(value as UserGender)}>
+              <SelectTrigger id="reg-gender"><SelectValue placeholder="Choose an avatar style" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="FEMALE">Female</SelectItem>
+                <SelectItem value="MALE">Male</SelectItem>
+                <SelectItem value="NON_BINARY">Non-binary</SelectItem>
+                <SelectItem value="PREFER_NOT_TO_SAY">Prefer not to say</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
             <Label htmlFor="reg-email">Email *</Label>
             <Input id="reg-email" type="email" placeholder={needsCollegeEmail(regRole) ? `you${VALID_DOMAIN}` : 'you@company.com'} value={regEmail} onChange={(e) => setRegEmail(e.target.value)} />
             {regEmail && needsCollegeEmail(regRole) && !regEmail.toLowerCase().endsWith(VALID_DOMAIN) && (
@@ -549,7 +601,18 @@ export function LandingPage() {
           </div>
           <div className="space-y-2">
             <Label htmlFor="reg-password">Password *</Label>
-            <Input id="reg-password" type="password" placeholder="Min 6 characters" value={regPassword} onChange={(e) => setRegPassword(e.target.value)} />
+            <div className="relative">
+              <Input id="reg-password" type={showRegPassword ? 'text' : 'password'} placeholder="Min 6 characters" value={regPassword} onChange={(e) => setRegPassword(e.target.value)} className="pr-10" />
+              <button
+                type="button"
+                aria-label={showRegPassword ? 'Hide password' : 'Show password'}
+                aria-pressed={showRegPassword}
+                onClick={() => setShowRegPassword((visible) => !visible)}
+                className="absolute inset-y-0 right-0 flex items-center px-3 text-muted-foreground hover:text-foreground"
+              >
+                {showRegPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
           </div>
           <div className="space-y-2">
             <Label htmlFor="reg-department">Department</Label>
@@ -560,6 +623,28 @@ export function LandingPage() {
               </SelectContent>
             </Select>
           </div>
+          {needsCollegeEmail(regRole) && (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="reg-start-year">Intake year *</Label>
+                <Select value={regStartYear} onValueChange={setRegStartYear}>
+                  <SelectTrigger id="reg-start-year"><SelectValue placeholder="Select intake year" /></SelectTrigger>
+                  <SelectContent>
+                    {getStartYearOptions().map((year) => <SelectItem key={year} value={String(year)}>{year}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="reg-graduation-year">Expected graduation *</Label>
+                <Select value={regGraduationYear} onValueChange={setRegGraduationYear}>
+                  <SelectTrigger id="reg-graduation-year"><SelectValue placeholder="Select year" /></SelectTrigger>
+                  <SelectContent>
+                    {getGraduationYearOptions().map((year) => <SelectItem key={year} value={String(year)}>{year}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
           <div className="space-y-2">
             <Label htmlFor="reg-phone">Phone</Label>
             <Input id="reg-phone" type="tel" placeholder="+91 98765 43210" value={regPhone} onChange={(e) => setRegPhone(e.target.value)} />
@@ -642,7 +727,24 @@ export function LandingPage() {
         </div>
       </section>
 
-      
+      {/* Demo */}
+      <section className="bg-muted/40 py-16 px-4">
+        <div className="max-w-4xl mx-auto text-center">
+          <div className="inline-flex items-center gap-2 mb-4">
+            <BookOpen className="w-5 h-5 text-emerald-600" />
+            <span className="text-sm font-medium text-emerald-600 uppercase tracking-wider">Quick Demo</span>
+          </div>
+          <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-3">Try It Out Instantly</h2>
+          <p className="text-muted-foreground mb-8 max-w-lg mx-auto">Click any button below to log in as a demo user.</p>
+          <div className="flex flex-wrap justify-center gap-3">
+            {DEMO_ACCOUNTS.map((demo) => (
+              <Button key={demo.role} variant="outline" className={`${demo.color} text-white border-0 font-medium px-6`} onClick={() => handleDemoLogin(demo)}>
+                {demo.label}
+              </Button>
+            ))}
+          </div>
+        </div>
+      </section>
 
       {/* Footer */}
       <footer className="bg-foreground text-muted-foreground py-6 px-4">

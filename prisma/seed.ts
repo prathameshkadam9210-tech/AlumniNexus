@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client'
+import { PrismaClient, type Event, type Job, type User } from '@prisma/client'
 
 const db = new PrismaClient()
 
@@ -50,13 +50,13 @@ async function seed() {
   })
 
   const departmentAdmins = [
-    ['cseadmin@jjmcoe.ac.in', 'CSE Department Admin', 'Computer Science and Engineering (CSE)', 'cse123'],
-    ['itadmin@jjmcoe.ac.in', 'IT Department Admin', 'Information Technology (IT)', 'it123'],
+    ['cseadmin@jjmcoe.ac.in', 'CSE Department Admin', 'Computer Science and Engineering(CSE)', 'cse123'],
+    ['itadmin@jjmcoe.ac.in', 'IT Department Admin', 'Information Technology(IT)', 'it123'],
     ['aidsadmin@jjmcoe.ac.in', 'AIDS Department Admin', 'Artificial Intelligence and Data Science (AIDS)', 'aids123'],
     ['entcadmin@jjmcoe.ac.in', 'ENTC Department Admin', 'Electronics and Telecommunication (ENTC)', 'entc123'],
-    ['mechadmin@jjmcoe.ac.in', 'Mechanical Department Admin', 'Mechanical Engineering (MECH)', 'mech123'],
-    ['civiladmin@jjmcoe.ac.in', 'Civil Department Admin', 'Civil Engineering (CE)', 'civil123'],
-    ['mcaadmin@jjmcoe.ac.in', 'MCA Department Admin', 'Master in Computer Application (MCA)', 'mca123'],
+    ['mechadmin@jjmcoe.ac.in', 'Mechanical Department Admin', 'Mechanical Engineering', 'mech123'],
+    ['civiladmin@jjmcoe.ac.in', 'Civil Department Admin', 'Civil Engineering', 'civil123'],
+    ['mcaadmin@jjmcoe.ac.in', 'MCA Department Admin', 'Master in Computer Application', 'mca123'],
   ]
   for (const [email, name, department, password] of departmentAdmins) {
     await db.user.create({
@@ -67,7 +67,7 @@ async function seed() {
   const alumni1 = await db.user.create({
     data: {
       email: 'rahul.pawar@jjmcoe.ac.in', password: 'demo123', name: 'Rahul Pawar',
-      role: 'ALUMNI', department: 'Computer Science and Engineering (CSE)', batch: '2019-2023', graduationYear: 2023,
+      role: 'ALUMNI', department: 'Computer Science and Engineering(CSE)', batch: '2019-2023', graduationYear: 2023,
       company: 'Tata Consultancy Services', designation: 'Software Engineer',
       experience: '2 years', location: 'Pune', skills: 'React, Node.js, TypeScript, AWS',
       linkedinUrl: 'https://linkedin.com/in/rahulpawar', gpa: 8.5, isVerified: true, emailVerified: true, organizationId: jjmcoe.id,
@@ -77,7 +77,7 @@ async function seed() {
   const alumni2 = await db.user.create({
     data: {
       email: 'priya.patil@jjmcoe.ac.in', password: 'demo123', name: 'Priya Patil',
-      role: 'ALUMNI', department: 'Information Technology (IT)', batch: '2018-2022', graduationYear: 2022,
+      role: 'ALUMNI', department: 'Information Technology(IT)', batch: '2018-2022', graduationYear: 2022,
       company: 'Infosys', designation: 'Technology Analyst',
       experience: '3 years', location: 'Mumbai', skills: 'Java, Spring Boot, Microservices, Docker',
       gpa: 9.1, isVerified: true, emailVerified: true, organizationId: jjmcoe.id,
@@ -87,7 +87,7 @@ async function seed() {
   const alumni3 = await db.user.create({
     data: {
       email: 'sachin.kulkarni@jjmcoe.ac.in', password: 'demo123', name: 'Sachin Kulkarni',
-      role: 'ALUMNI', department: 'Computer Science and Engineering (CSE)', batch: '2017-2021', graduationYear: 2021,
+      role: 'ALUMNI', department: 'Computer Science and Engineering(CSE)', batch: '2017-2021', graduationYear: 2021,
       company: 'Persistent Systems', designation: 'Senior Software Developer',
       experience: '4 years', location: 'Pune', skills: 'Python, Django, React, PostgreSQL',
       gpa: 8.8, isVerified: true, emailVerified: true, organizationId: jjmcoe.id,
@@ -114,17 +114,17 @@ async function seed() {
     },
   })
 
-  const students = []
+  const students: User[] = []
   const studentData = [
-    { name: 'Aditya Shinde', email: 'aditya.shinde@jjmcoe.ac.in', dept: 'Computer Science and Engineering (CSE)', batch: '2021-2025', skills: 'React, TypeScript, Node.js, Python', gpa: 8.7 },
-    { name: 'Sneha Kulkarni', email: 'sneha.kulkarni@jjmcoe.ac.in', dept: 'Information Technology (IT)', batch: '2021-2025', skills: 'Java, Web Dev, SQL, Git', gpa: 9.2 },
-    { name: 'Rohan Jadhav', email: 'rohan.jadhav@jjmcoe.ac.in', dept: 'Computer Science and Engineering (CSE)', batch: '2022-2026', skills: 'Python, ML, Data Science, TensorFlow', gpa: 8.4 },
+    { name: 'Aditya Shinde', email: 'aditya.shinde@jjmcoe.ac.in', dept: 'Computer Science and Engineering(CSE)', batch: '2021-2025', skills: 'React, TypeScript, Node.js, Python', gpa: 8.7 },
+    { name: 'Sneha Kulkarni', email: 'sneha.kulkarni@jjmcoe.ac.in', dept: 'Information Technology(IT)', batch: '2021-2025', skills: 'Java, Web Dev, SQL, Git', gpa: 9.2 },
+    { name: 'Rohan Jadhav', email: 'rohan.jadhav@jjmcoe.ac.in', dept: 'Computer Science and Engineering(CSE)', batch: '2022-2026', skills: 'Python, ML, Data Science, TensorFlow', gpa: 8.4 },
     { name: 'Pooja Gaikwad', email: 'pooja.gaikwad@jjmcoe.ac.in', dept: 'Electronics and Telecommunication (ENTC)', batch: '2021-2025', skills: 'Arduino, IoT, C Programming', gpa: 8.9 },
-    { name: 'Akash Patil', email: 'akash.patil@jjmcoe.ac.in', dept: 'Information Technology (IT)', batch: '2022-2026', skills: 'React, Flutter, Firebase, Dart', gpa: 7.8 },
-    { name: 'Neha Chavan', email: 'neha.chavan@jjmcoe.ac.in', dept: 'Computer Science and Engineering (CSE)', batch: '2021-2025', skills: 'JavaScript, Vue.js, Node.js, MongoDB', gpa: 8.5 },
+    { name: 'Akash Patil', email: 'akash.patil@jjmcoe.ac.in', dept: 'Information Technology(IT)', batch: '2022-2026', skills: 'React, Flutter, Firebase, Dart', gpa: 7.8 },
+    { name: 'Neha Chavan', email: 'neha.chavan@jjmcoe.ac.in', dept: 'Computer Science and Engineering(CSE)', batch: '2021-2025', skills: 'JavaScript, Vue.js, Node.js, MongoDB', gpa: 8.5 },
     { name: 'Saurabh Desai', email: 'saurabh.desai@jjmcoe.ac.in', dept: 'Mechanical Engineering (MECH)', batch: '2022-2026', skills: 'SolidWorks, MATLAB, ANSYS', gpa: 7.6 },
-    { name: 'Kavita Raut', email: 'kavita.raut@jjmcoe.ac.in', dept: 'Information Technology (IT)', batch: '2021-2025', skills: 'Java, AWS, DevOps, Docker', gpa: 8.3 },
-    { name: 'Vikram More', email: 'vikram.more@jjmcoe.ac.in', dept: 'Computer Science and Engineering (CSE)', batch: '2022-2026', skills: 'Go, Kubernetes, CI/CD, Linux', gpa: 9.0 },
+    { name: 'Kavita Raut', email: 'kavita.raut@jjmcoe.ac.in', dept: 'Information Technology(IT)', batch: '2021-2025', skills: 'Java, AWS, DevOps, Docker', gpa: 8.3 },
+    { name: 'Vikram More', email: 'vikram.more@jjmcoe.ac.in', dept: 'Computer Science and Engineering(CSE)', batch: '2022-2026', skills: 'Go, Kubernetes, CI/CD, Linux', gpa: 9.0 },
     { name: 'Swati Bhosle', email: 'swati.bhosle@jjmcoe.ac.in', dept: 'Electronics and Telecommunication (ENTC)', batch: '2022-2026', skills: 'VLSI, Verilog, FPGA, Embedded Systems', gpa: 8.1 },
   ]
 
@@ -161,17 +161,17 @@ async function seed() {
   // 3. Jobs
   console.log('Creating jobs...')
   const futureDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
-  const jobs = []
+  const jobs: Job[] = []
   const jobData = [
-    { title: 'Software Developer', company: 'TCS', location: 'Pune', type: 'FULL_TIME', salaryMin: 3.5, salaryMax: 5, skills: 'Java, React, SQL', exp: '0-2 years', postedBy: recruiter1.id },
-    { title: 'Frontend Developer', company: 'Infosys', location: 'Hyderabad', type: 'FULL_TIME', salaryMin: 4, salaryMax: 6, skills: 'React, TypeScript, CSS', exp: '1-3 years', postedBy: recruiter2.id },
-    { title: 'Backend Engineer', company: 'TCS', location: 'Mumbai', type: 'FULL_TIME', salaryMin: 5, salaryMax: 8, skills: 'Node.js, Python, MongoDB', exp: '2-4 years', postedBy: recruiter1.id },
+    { title: 'Software Developer', company: 'TCS', location: 'Pune', type: 'FULL_TIME', salaryMin: 350000, salaryMax: 500000, skills: 'Java, React, SQL', exp: '0-2 years', postedBy: recruiter1.id },
+    { title: 'Frontend Developer', company: 'Infosys', location: 'Hyderabad', type: 'FULL_TIME', salaryMin: 400000, salaryMax: 600000, skills: 'React, TypeScript, CSS', exp: '1-3 years', postedBy: recruiter2.id },
+    { title: 'Backend Engineer', company: 'TCS', location: 'Mumbai', type: 'FULL_TIME', salaryMin: 500000, salaryMax: 800000, skills: 'Node.js, Python, MongoDB', exp: '2-4 years', postedBy: recruiter1.id },
     { title: 'Data Analyst Intern', company: 'Infosys', location: 'Pune', type: 'INTERNSHIP', salaryMin: 15000, salaryMax: 20000, skills: 'Python, SQL, Excel', exp: 'Fresher', postedBy: recruiter2.id },
-    { title: 'DevOps Engineer', company: 'TCS', location: 'Bangalore', type: 'FULL_TIME', salaryMin: 6, salaryMax: 10, skills: 'Docker, Kubernetes, AWS', exp: '3-5 years', postedBy: recruiter1.id },
-    { title: 'React Native Developer', company: 'Persistent Systems', location: 'Pune', type: 'FULL_TIME', salaryMin: 5, salaryMax: 8, skills: 'React Native, JavaScript, Redux', exp: '1-3 years', postedBy: recruiter1.id },
+    { title: 'DevOps Engineer', company: 'TCS', location: 'Bangalore', type: 'FULL_TIME', salaryMin: 600000, salaryMax: 1000000, skills: 'Docker, Kubernetes, AWS', exp: '3-5 years', postedBy: recruiter1.id },
+    { title: 'React Native Developer', company: 'Persistent Systems', location: 'Pune', type: 'FULL_TIME', salaryMin: 500000, salaryMax: 800000, skills: 'React Native, JavaScript, Redux', exp: '1-3 years', postedBy: recruiter1.id },
     { title: 'Machine Learning Intern', company: 'TCS', location: 'Chennai', type: 'INTERNSHIP', salaryMin: 20000, salaryMax: 25000, skills: 'Python, TensorFlow, ML', exp: 'Fresher', postedBy: recruiter1.id },
-    { title: 'Cloud Engineer', company: 'Infosys', location: 'Pune', type: 'FULL_TIME', salaryMin: 7, salaryMax: 12, skills: 'AWS, Azure, Terraform', exp: '3-5 years', postedBy: recruiter2.id },
-    { title: 'UI/UX Designer', company: 'Persistent Systems', location: 'Mumbai', type: 'FULL_TIME', salaryMin: 4, salaryMax: 7, skills: 'Figma, Adobe XD, CSS', exp: '1-3 years', postedBy: recruiter1.id },
+    { title: 'Cloud Engineer', company: 'Infosys', location: 'Pune', type: 'FULL_TIME', salaryMin: 700000, salaryMax: 1200000, skills: 'AWS, Azure, Terraform', exp: '3-5 years', postedBy: recruiter2.id },
+    { title: 'UI/UX Designer', company: 'Persistent Systems', location: 'Mumbai', type: 'FULL_TIME', salaryMin: 400000, salaryMax: 700000, skills: 'Figma, Adobe XD, CSS', exp: '1-3 years', postedBy: recruiter1.id },
     { title: 'Embedded Systems Intern', company: 'Wipro', location: 'Bangalore', type: 'INTERNSHIP', salaryMin: 10000, salaryMax: 15000, skills: 'C, C++, Arduino', exp: 'Fresher', postedBy: recruiter2.id },
   ]
 
@@ -233,7 +233,7 @@ async function seed() {
 
   // 6. Events
   console.log('Creating events...')
-  const events = []
+  const events: Event[] = []
   const eventData = [
     { title: 'Tech Fest 2025', description: 'Annual technical festival with workshops and competitions.', type: 'WORKSHOP', date: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), organizerId: admin.id },
     { title: 'Placement Drive - TCS', description: 'TCS campus recruitment drive for final year students.', type: 'PLACEMENT_DRIVE', date: new Date(Date.now() + 21 * 24 * 60 * 60 * 1000), organizerId: placement.id },
@@ -276,13 +276,7 @@ async function seed() {
   }
   console.log('  Created notifications\n')
 
-  // 9. Payments
-  console.log('Creating payments...')
-  await db.payment.create({ data: { userId: students[0].id, amount: 500, type: 'EVENT', description: 'Tech Fest Registration', status: 'COMPLETED', razorpayId: 'pay_demo_1' } })
-  await db.payment.create({ data: { userId: students[1].id, amount: 200, type: 'DONATION', description: 'Alumni Fund Donation', status: 'COMPLETED', razorpayId: 'pay_demo_2' } })
-  console.log('  Created payments\n')
-
-  // 10. Certificates
+  // 9. Certificates
   console.log('Creating certificates...')
   const crypto = await import('crypto')
   for (let i = 0; i < 3; i++) {
@@ -323,7 +317,7 @@ async function seed() {
   console.log('DEPARTMENT ADMINS:')
   console.log('  cseadmin@jjmcoe.ac.in / cse123')
   console.log('  itadmin@jjmcoe.ac.in / it123')
-  console.log('  aidsadmin@jjmcoe.ac.in / aids123')
+  console.log('  aimladmin@jjmcoe.ac.in / aiml123')
   console.log('  entcadmin@jjmcoe.ac.in / entc123')
   console.log('  mechadmin@jjmcoe.ac.in / mech123')
   console.log('  civiladmin@jjmcoe.ac.in / civil123')

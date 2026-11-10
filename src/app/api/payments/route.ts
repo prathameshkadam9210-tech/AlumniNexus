@@ -1,6 +1,8 @@
 import Razorpay from 'razorpay'
 import crypto from 'crypto'
 import { db } from '@/lib/db'
+import { getBatchWhereFilter } from '@/lib/batches'
+import { getDepartmentAliases } from '@/lib/departments'
 import { isEmailConfigured, sendDonationReceiptEmail, sendPaymentStatusEmail } from '@/lib/email'
 import { DONATION_PURPOSES, getDonationPurposeLabel } from '@/lib/donation-purposes'
 import { NextRequest, NextResponse } from 'next/server'
@@ -83,9 +85,48 @@ export async function POST(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   try {
-    const userId = new URL(req.url).searchParams.get('userId')
+    const searchParams = new URL(req.url).searchParams
+    const userId = searchParams.get('userId')
+    const actorId = searchParams.get('actorId')
+    const department = searchParams.get('department')
+    const batchValue = searchParams.get('batch')
+    const graduationYearValue = searchParams.get('graduationYear') || batchValue
+    const startYearValue = searchParams.get('startYear')
+    const graduationYear = graduationYearValue && /^\d{4}$/.test(graduationYearValue) ? Number(graduationYearValue) : undefined
+    const startYear = startYearValue && /^\d{4}$/.test(startYearValue) ? Number(startYearValue) : undefined
+    let where: {
+      userId?: string
+      user?: {
+        department?: { in: string[] }
+        AND?: Array<{
+          OR: Array<{ graduationYear: number } | { batch: string } | { batch: { contains: string } }>
+        }>
+      }
+    } = {}
+
+    if (userId) {
+      where.userId = userId
+    } else {
+      if (!actorId) return NextResponse.json({ error: 'Admin ID is required' }, { status: 400 })
+      const actor = await db.user.findUnique({
+        where: { id: actorId },
+        select: { role: true, department: true },
+      })
+      if (actor?.role !== 'ADMIN') return NextResponse.json({ error: 'Only admins can view all payments' }, { status: 403 })
+
+      if (actor.department !== 'Administration') {
+        where.user = { department: { in: getDepartmentAliases(actor.department || '') } }
+      } else {
+        const userFilter = {
+          ...(department ? { department: { in: getDepartmentAliases(department) } } : {}),
+          ...(startYear || graduationYear ? getBatchWhereFilter({ startYear, graduationYear }) : {}),
+        }
+        if (Object.keys(userFilter).length > 0) where.user = userFilter
+      }
+    }
+
     const payments = await db.payment.findMany({
-      where: userId ? { userId } : undefined,
+      where,
       orderBy: { createdAt: 'desc' },
     })
     return NextResponse.json(payments.map((payment) => ({ ...payment, createdAt: payment.createdAt.toISOString() })))
@@ -191,7 +232,21 @@ export async function PUT(req: NextRequest) {
     }
 
     if (existingPayment.type === 'DONATION' && finalStatus === 'COMPLETED') {
-      const admins = await db.user.findMany({ where: { role: { in: ['ADMIN', 'PLACEMENT_CELL'] } }, select: { id: true } })
+      const donor = await db.user.findUnique({
+        where: { id: existingPayment.userId },
+        select: { department: true },
+      })
+      const departmentAliases = donor?.department ? getDepartmentAliases(donor.department) : []
+      const admins = await db.user.findMany({
+        where: {
+          role: 'ADMIN',
+          OR: [
+            { department: 'Administration' },
+            ...(departmentAliases.length > 0 ? [{ department: { in: departmentAliases } }] : []),
+          ],
+        },
+        select: { id: true },
+      })
       await Promise.all(admins.map((admin) => db.notification.create({
         data: { userId: admin.id, title: 'New Donation Received', message: `A donation of ${existingPayment.currency} ${existingPayment.amount} has been received.`, type: 'DONATION' },
       })))

@@ -69,11 +69,13 @@ const JOB_TYPES = ['Full-time', 'Internship', 'Part-time', 'Contract', 'Freelanc
 const TIME_SLOTS = ['10:00 AM', '11:00 AM', '12:00 PM', '2:00 PM', '3:00 PM', '4:00 PM', '5:00 PM']
 
 function formatSalary(min?: number | null, max?: number | null, currency?: string): string {
-  if (!min && !max) return 'Not disclosed'
+  if (min == null && max == null) return 'Not disclosed'
   const c = currency || 'INR'
-  const fmt = (n: number) => `${(n / 100000).toFixed(n >= 100000 ? 1 : 0)}L`
-  if (min && max) return `${c} ${fmt(min)} - ${fmt(max)}`
-  if (min) return `From ${c} ${fmt(min)}`
+  const fmt = (n: number) => n >= 100000
+    ? `${(n / 100000).toFixed(1)}L`
+    : n.toLocaleString('en-IN')
+  if (min != null && max != null) return `${c} ${fmt(min)} - ${fmt(max)}`
+  if (min != null) return `From ${c} ${fmt(min)}`
   return `Up to ${c} ${fmt(max!)}`
 }
 
@@ -114,19 +116,30 @@ function typeBadgeVariant(type: string) {
 // ─── Jobs Listing ──────────────────────────────────────────────────────────────
 
 function JobsListing() {
-  const { jobs, setJobs, currentUser, setCurrentView, setSelectedJobId } = useAppStore()
+  const { jobs: storedJobs, setJobs, currentUser, setCurrentView, setSelectedJobId, addToast } = useAppStore()
+  const jobs = Array.isArray(storedJobs) ? storedJobs : []
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('All')
 
   // Fetch jobs if store is empty
   useEffect(() => {
-    if (jobs.length === 0) {
-      fetch('/api/jobs')
-        .then((r) => r.json())
-        .then((data) => setJobs(data))
-        .catch(() => {})
+    if (jobs.length > 0) return
+    let active = true
+    const loadJobs = async () => {
+      try {
+        const query = currentUser?.id ? `?actorId=${encodeURIComponent(currentUser.id)}` : ''
+        const response = await fetch(`/api/jobs${query}`)
+        const data = await response.json()
+        if (!response.ok) throw new Error(data.error || 'Unable to load jobs')
+        if (!Array.isArray(data)) throw new Error('Invalid jobs response: expected a list of jobs')
+        if (active) setJobs(data)
+      } catch (error) {
+        if (active) addToast(error instanceof Error ? error.message : 'Unable to load jobs', 'error')
+      }
     }
-  }, [jobs.length, setJobs])
+    void loadJobs()
+    return () => { active = false }
+  }, [addToast, currentUser?.id, jobs.length, setJobs])
 
   const filteredJobs = useMemo(() => {
     let result = jobs.filter((j) => j.status === 'OPEN' || j.status === 'ACTIVE')
@@ -563,6 +576,7 @@ function PostJobForm({ editJob }: { editJob?: Job | null }) {
         skills: form.skills.trim() || null,
         experienceRequired: form.experienceRequired.trim() || null,
         postedById: currentUser?.id,
+        actorId: currentUser?.id,
         deadline: form.deadline || null,
       }
 
@@ -821,7 +835,7 @@ function ManageJobs() {
   const handleDelete = async (jobId: string) => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/jobs?id=${jobId}`, { method: 'DELETE' })
+      const res = await fetch(`/api/jobs?id=${jobId}&actorId=${encodeURIComponent(currentUser?.id || '')}`, { method: 'DELETE' })
       if (!res.ok) {
         const err = await res.json()
         addToast(err.error || 'Failed to delete job.', 'error')
@@ -844,7 +858,7 @@ function ManageJobs() {
       const res = await fetch('/api/jobs', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jobId: job.id, status: newStatus }),
+        body: JSON.stringify({ actorId: currentUser?.id, jobId: job.id, status: newStatus }),
       })
       if (!res.ok) {
         const err = await res.json()
@@ -1084,7 +1098,9 @@ function ReceivedApplications() {
 
   const myJobs = jobs.filter((j) => j.postedById === currentUser?.id)
   const myJobIds = new Set(myJobs.map((j) => j.id))
-  const receivedApps = applications.filter((a) => myJobIds.has(a.jobId))
+  const receivedApps = currentUser?.role === 'RECRUITER'
+    ? applications.filter((a) => myJobIds.has(a.jobId))
+    : applications
 
   const handleStatusUpdate = async (applicationId: string, status: string) => {
     setLoading(true)
@@ -1092,7 +1108,7 @@ function ReceivedApplications() {
       const res = await fetch('/api/applications', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ applicationId, status }),
+        body: JSON.stringify({ actorId: currentUser?.id, applicationId, status }),
       })
       if (!res.ok) {
         const err = await res.json()
@@ -1363,16 +1379,15 @@ export function JobsView() {
     case 'job-detail':
       return <JobDetail />
     case 'post-job':
-      return <PostJobForm />
+      return currentUser?.role === 'PLACEMENT_CELL' ? <PostJobForm /> : <JobsListing />
     case 'manage-jobs':
       return <ManageJobs />
     case 'applications':
-      if (currentUser?.role === 'RECRUITER') {
-        return <ReceivedApplications />
-      }
-      return <MyApplications />
+      if (currentUser?.role === 'STUDENT' || currentUser?.role === 'ALUMNI') return <MyApplications />
+      if (currentUser?.role === 'ADMIN' || currentUser?.role === 'PLACEMENT_CELL') return <ReceivedApplications />
+      return <JobsListing />
     case 'candidate-search':
-      return <CandidateSearch />
+      return <JobsListing />
     default:
       return <JobsListing />
   }

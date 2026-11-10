@@ -2,6 +2,12 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useAppStore, type User, type Mentorship as MentorshipType } from '@/store/app-store'
+import {
+  getGraduationYearOptions,
+  getStartYearOptions,
+  matchesGraduationYear,
+  matchesStartYear,
+} from '@/lib/batches'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -20,6 +26,13 @@ import {
 } from '@/components/ui/dialog'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import {
+  Command,
+  CommandEmpty,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command'
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -27,14 +40,6 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from '@/components/ui/command'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Separator } from '@/components/ui/separator'
 import {
@@ -80,12 +85,34 @@ const DURATIONS = [
   { value: 60, label: '1 hour' },
 ]
 
+interface MentorshipSlotItem {
+  id: string
+  mentorId: string
+  date: string
+  timeSlot: string
+  duration: number
+  topic?: string | null
+  status: string
+  mentor?: { name: string; company?: string | null; designation?: string | null }
+}
+
 function formatDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString('en-IN', {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
   })
+}
+
+function getTodayDate(): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date())
+  const value = (type: 'year' | 'month' | 'day') => parts.find((part) => part.type === type)?.value
+  return `${value('year')}-${value('month')}-${value('day')}`
 }
 
 function statusColor(status: string) {
@@ -131,8 +158,12 @@ function StudentMentorshipView() {
   const { mentorships, currentUser, addMentorship, addToast, setLoading, setCurrentView } = useAppStore()
   const [showBookingDialog, setShowBookingDialog] = useState(false)
   const [alumniList, setAlumniList] = useState<User[]>([])
+  const [availableSlots, setAvailableSlots] = useState<MentorshipSlotItem[]>([])
+  const [slotsLoading, setSlotsLoading] = useState(true)
+  const [mentorSearch, setMentorSearch] = useState('')
   const [mentorPickerOpen, setMentorPickerOpen] = useState(false)
   const [mentorBatch, setMentorBatch] = useState('ALL')
+  const [mentorStartYear, setMentorStartYear] = useState('ALL')
   const [bookingForm, setBookingForm] = useState({
     mentorId: '',
     date: '',
@@ -158,16 +189,30 @@ function StudentMentorshipView() {
     fetchAlumni()
   }, [])
 
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/mentorship-slots')
+      .then(async (response) => {
+        const data = await response.json()
+        if (!response.ok) throw new Error(data.error || 'Unable to load available slots')
+        if (!cancelled) setAvailableSlots(Array.isArray(data) ? data : [])
+      })
+      .catch((error) => {
+        if (!cancelled) addToast(error instanceof Error ? error.message : 'Unable to load available slots', 'error')
+      })
+      .finally(() => { if (!cancelled) setSlotsLoading(false) })
+    return () => { cancelled = true }
+  }, [addToast])
+
   const myMentorships = mentorships.filter((m) => m.menteeId === currentUser?.id)
-  const mentorBatches = useMemo(
-    () => Array.from(new Set(alumniList.map((alumni) => alumni.batch).filter((batch): batch is string => Boolean(batch?.trim())))).sort(),
-    [alumniList]
-  )
+  const mentorStartYears = useMemo(() => getStartYearOptions(alumniList), [alumniList])
+  const mentorGraduationYears = useMemo(() => getGraduationYearOptions(alumniList), [alumniList])
   const selectableMentors = useMemo(() => {
     return alumniList.filter((alumni) =>
-      mentorBatch === 'ALL' || alumni.batch === mentorBatch
+      (mentorBatch === 'ALL' || matchesGraduationYear(alumni, Number(mentorBatch))) &&
+      (mentorStartYear === 'ALL' || matchesStartYear(alumni, Number(mentorStartYear)))
     )
-  }, [alumniList, mentorBatch])
+  }, [alumniList, mentorBatch, mentorStartYear])
   const selectedMentor = alumniList.find((alumni) => alumni.id === bookingForm.mentorId)
 
   const upcoming = myMentorships.filter(
@@ -230,6 +275,27 @@ function StudentMentorshipView() {
       addToast('Mentorship session booked successfully!', 'success')
     } catch {
       addToast('Something went wrong. Please try again.', 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleBookOfferedSlot = async (slot: MentorshipSlotItem) => {
+    if (!currentUser) return
+    setLoading(true)
+    try {
+      const response = await fetch('/api/mentorship-slots', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'book', menteeId: currentUser.id, actorId: currentUser.id, slotId: slot.id }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Unable to book this slot')
+      addMentorship(data)
+      setAvailableSlots((slots) => slots.filter((item) => item.id !== slot.id))
+      addToast('Mentorship slot booked; the mentor will confirm your request.', 'success')
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : 'Unable to book this slot', 'error')
     } finally {
       setLoading(false)
     }
@@ -308,6 +374,26 @@ function StudentMentorshipView() {
               {/* Mentor Select */}
               <div className="space-y-2">
                 <Label>Select Mentor *</Label>
+                <div className="grid grid-cols-2 gap-3">
+                  <Select value={mentorStartYear} onValueChange={setMentorStartYear}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Filter by intake year" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ALL">All intake years</SelectItem>
+                      {mentorStartYears.map((year) => <SelectItem key={year} value={String(year)}>{year}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <Select value={mentorBatch} onValueChange={setMentorBatch}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Filter by graduation year" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ALL">All graduation years</SelectItem>
+                      {mentorGraduationYears.map((year) => <SelectItem key={year} value={String(year)}>{year}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
                 <Popover open={mentorPickerOpen} onOpenChange={setMentorPickerOpen}>
                   <PopoverTrigger asChild>
                     <Button
@@ -317,53 +403,42 @@ function StudentMentorshipView() {
                       aria-expanded={mentorPickerOpen}
                       className="w-full justify-between font-normal"
                     >
-                      <span className="truncate">
-                        {selectedMentor
-                          ? `${selectedMentor.name} — ${selectedMentor.batch || 'Batch not provided'}`
-                          : 'Search and choose an alumni mentor'}
-                      </span>
+                      {selectedMentor
+                        ? `${selectedMentor.name} — ${selectedMentor.batch || 'Batch not provided'} — ${selectedMentor.designation || selectedMentor.company || 'Alumni'}`
+                        : 'Search and choose an alumni mentor'}
                       <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                  <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
                     <Command>
-                      <CommandInput placeholder="Search alumni by name..." />
+                      <CommandInput
+                        placeholder="Search alumni by name..."
+                        value={mentorSearch}
+                        onValueChange={setMentorSearch}
+                      />
                       <CommandList>
-                        <CommandEmpty>No mentors match your search.</CommandEmpty>
-                        <CommandGroup>
-                          {selectableMentors.map((alumni) => (
+                        <CommandEmpty>No mentors match your search or filters.</CommandEmpty>
+                        {selectableMentors.map((alumni) => {
+                          const mentorLabel = `${alumni.name} — ${alumni.batch || 'Batch not provided'} — ${alumni.designation || alumni.company || 'Alumni'}`
+                          return (
                             <CommandItem
                               key={alumni.id}
-                              value={`${alumni.name} ${alumni.batch || ''} ${alumni.designation || ''} ${alumni.company || ''} ${alumni.id}`}
+                              value={`${alumni.name} ${alumni.batch || ''} ${alumni.designation || alumni.company || ''}`}
                               onSelect={() => {
                                 updateField('mentorId', alumni.id)
+                                setMentorSearch('')
                                 setMentorPickerOpen(false)
                               }}
                             >
-                              <Check
-                                className={`mr-2 h-4 w-4 ${
-                                  bookingForm.mentorId === alumni.id ? 'opacity-100' : 'opacity-0'
-                                }`}
-                              />
-                              <span className="truncate">
-                                {alumni.name} — {alumni.batch || 'Batch not provided'} — {alumni.designation || alumni.company || 'Alumni'}
-                              </span>
+                              <Check className={`h-4 w-4 ${bookingForm.mentorId === alumni.id ? 'opacity-100' : 'opacity-0'}`} />
+                              {mentorLabel}
                             </CommandItem>
-                          ))}
-                        </CommandGroup>
+                          )
+                        })}
                       </CommandList>
                     </Command>
                   </PopoverContent>
                 </Popover>
-                <Select value={mentorBatch} onValueChange={setMentorBatch}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Filter by passout batch" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ALL">All passout batches</SelectItem>
-                    {mentorBatches.map((batch) => <SelectItem key={batch} value={batch}>{batch}</SelectItem>)}
-                  </SelectContent>
-                </Select>
                 {errors.mentorId && <p className="text-xs text-destructive">{errors.mentorId}</p>}
               </div>
 
@@ -376,7 +451,7 @@ function StudentMentorshipView() {
                     type="date"
                     value={bookingForm.date}
                     onChange={(e) => updateField('date', e.target.value)}
-                    min={new Date().toISOString().split('T')[0]}
+                    min={getTodayDate()}
                   />
                   {errors.date && <p className="text-xs text-destructive">{errors.date}</p>}
                 </div>
@@ -442,6 +517,36 @@ function StudentMentorshipView() {
         </Dialog>
       </div>
 
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Available mentor slots</CardTitle>
+          <CardDescription>Book a time offered by an alumni mentor.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {slotsLoading ? (
+            <Skeleton className="h-20 w-full" />
+          ) : availableSlots.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No offered slots are available yet. You can still request a session using Book a Session.</p>
+          ) : (
+            <div className="grid gap-3 md:grid-cols-2">
+              {availableSlots.map((slot) => (
+                <div key={slot.id} className="flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="font-medium">{slot.mentor?.name || 'Alumni mentor'}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {slot.mentor?.designation || slot.mentor?.company || 'Alumni'}
+                      {' · '}{formatDate(slot.date)} · {slot.timeSlot} · {slot.duration} min
+                    </p>
+                    {slot.topic && <p className="mt-1 text-sm">{slot.topic}</p>}
+                  </div>
+                  <Button size="sm" onClick={() => void handleBookOfferedSlot(slot)}>Book slot</Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Tabs: Upcoming / Past */}
       <Tabs defaultValue="upcoming">
         <TabsList>
@@ -504,7 +609,10 @@ function StudentMentorshipView() {
 // ─── Alumni Mentorship View ────────────────────────────────────────────────────
 
 function AlumniMentorshipView() {
-  const { mentorships, currentUser, updateMentorship, addToast, setLoading } = useAppStore()
+  const { mentorships, currentUser, updateMentorship, addToast, setLoading, isLoading } = useAppStore()
+  const [slotDialogOpen, setSlotDialogOpen] = useState(false)
+  const [offeredSlots, setOfferedSlots] = useState<MentorshipSlotItem[]>([])
+  const [slotForm, setSlotForm] = useState({ date: '', timeSlot: '', duration: '30', topic: '' })
 
   const myMentorships = mentorships.filter((m) => m.mentorId === currentUser?.id)
 
@@ -515,6 +623,71 @@ function AlumniMentorshipView() {
   const others = myMentorships.filter(
     (m) => m.status === 'REJECTED' || m.status === 'CANCELLED'
   )
+
+  useEffect(() => {
+    if (!currentUser) return
+    let cancelled = false
+    fetch(`/api/mentorship-slots?mentorId=${encodeURIComponent(currentUser.id)}&actorId=${encodeURIComponent(currentUser.id)}`)
+      .then(async (response) => {
+        const data = await response.json()
+        if (!response.ok) throw new Error(data.error || 'Unable to load your offered slots')
+        if (!cancelled) setOfferedSlots(Array.isArray(data) ? data : [])
+      })
+      .catch((error) => {
+        if (!cancelled) addToast(error instanceof Error ? error.message : 'Unable to load your offered slots', 'error')
+      })
+    return () => { cancelled = true }
+  }, [addToast, currentUser])
+
+  const handleOfferSlot = async () => {
+    if (!currentUser || !slotForm.date || !slotForm.timeSlot) {
+      addToast('Choose a date and time before offering a slot', 'error')
+      return
+    }
+    setLoading(true)
+    try {
+      const response = await fetch('/api/mentorship-slots', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'offer',
+          mentorId: currentUser.id,
+          actorId: currentUser.id,
+          date: new Date(`${slotForm.date}T00:00:00.000Z`).toISOString(),
+          timeSlot: slotForm.timeSlot,
+          duration: Number(slotForm.duration),
+          topic: slotForm.topic,
+        }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Unable to offer a mentorship slot')
+      setOfferedSlots((slots) => [...slots, data].sort((a, b) => a.date.localeCompare(b.date)))
+      setSlotForm({ date: '', timeSlot: '', duration: '30', topic: '' })
+      setSlotDialogOpen(false)
+      addToast('Mentorship slot offered to students', 'success')
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : 'Unable to offer a mentorship slot', 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleRemoveSlot = async (slotId: string) => {
+    if (!currentUser) return
+    try {
+      const response = await fetch('/api/mentorship-slots', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slotId, mentorId: currentUser.id, actorId: currentUser.id }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Unable to remove the slot')
+      setOfferedSlots((slots) => slots.filter((slot) => slot.id !== slotId))
+      addToast('Mentorship slot removed', 'success')
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : 'Unable to remove the slot', 'error')
+    }
+  }
 
   const handleStatusUpdate = async (mentorshipId: string, status: string) => {
     setLoading(true)
@@ -614,14 +787,83 @@ function AlumniMentorshipView() {
             Manage mentorship sessions and help students with career guidance.
           </p>
         </div>
-        <Button
-          variant="outline"
-          className="gap-2 bg-emerald-600 text-white hover:bg-emerald-700 hover:text-white"
-        >
-          <MessageSquare className="h-4 w-4" />
-          Offer Mentorship Slot
-        </Button>
+        <Dialog open={slotDialogOpen} onOpenChange={setSlotDialogOpen}>
+          <DialogTrigger asChild>
+            <Button className="gap-2 bg-emerald-600 text-white hover:bg-emerald-700">
+              <MessageSquare className="h-4 w-4" />
+              Offer Mentorship Slot
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Offer a mentorship slot</DialogTitle>
+              <DialogDescription>Students can request one of your available times.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="offer-slot-date">Date</Label>
+                <Input
+                  id="offer-slot-date"
+                  type="date"
+                  min={getTodayDate()}
+                  value={slotForm.date}
+                  onChange={(event) => setSlotForm((form) => ({ ...form, date: event.target.value }))}
+                />
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Time</Label>
+                  <Select value={slotForm.timeSlot} onValueChange={(timeSlot) => setSlotForm((form) => ({ ...form, timeSlot }))}>
+                    <SelectTrigger><SelectValue placeholder="Choose a time" /></SelectTrigger>
+                    <SelectContent>{TIME_SLOTS.map((time) => <SelectItem key={time} value={time}>{time}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Duration</Label>
+                  <Select value={slotForm.duration} onValueChange={(duration) => setSlotForm((form) => ({ ...form, duration }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>{DURATIONS.map((item) => <SelectItem key={item.value} value={String(item.value)}>{item.label}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="offer-slot-topic">Topic (optional)</Label>
+                <Textarea id="offer-slot-topic" value={slotForm.topic} onChange={(event) => setSlotForm((form) => ({ ...form, topic: event.target.value }))} />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setSlotDialogOpen(false)}>Cancel</Button>
+              <Button onClick={() => void handleOfferSlot()} disabled={isLoading}>Publish slot</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Your offered slots</CardTitle>
+          <CardDescription>Open slots can be removed; booked slots stay in your request list.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {offeredSlots.length === 0 ? (
+            <p className="text-sm text-muted-foreground">You have not offered any mentorship slots yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {offeredSlots.map((slot) => (
+                <div key={slot.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
+                  <div>
+                    <p className="font-medium">{formatDate(slot.date)} · {slot.timeSlot} · {slot.duration} min</p>
+                    <p className="text-sm text-muted-foreground">{slot.status === 'OPEN' ? slot.topic || 'Open for student requests' : `Booked${slot.topic ? ` · ${slot.topic}` : ''}`}</p>
+                  </div>
+                  {slot.status === 'OPEN' && (
+                    <Button size="sm" variant="outline" onClick={() => void handleRemoveSlot(slot.id)}>Remove</Button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Tabs defaultValue="pending">
         <TabsList>
@@ -820,6 +1062,7 @@ function AlumniDirectory() {
   const [alumniList, setAlumniList] = useState<User[]>([])
   const [search, setSearch] = useState('')
   const [batchFilter, setBatchFilter] = useState('ALL')
+  const [startYearFilter, setStartYearFilter] = useState('ALL')
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -844,7 +1087,8 @@ function AlumniDirectory() {
     const q = search.toLowerCase()
     return alumniList.filter(
       (a) =>
-        (batchFilter === 'ALL' || a.batch === batchFilter) &&
+        (batchFilter === 'ALL' || matchesGraduationYear(a, Number(batchFilter))) &&
+        (startYearFilter === 'ALL' || matchesStartYear(a, Number(startYearFilter))) &&
         (!q.trim() ||
           a.name.toLowerCase().includes(q) ||
           a.designation?.toLowerCase().includes(q) ||
@@ -853,12 +1097,10 @@ function AlumniDirectory() {
           a.skills?.toLowerCase().includes(q) ||
           a.location?.toLowerCase().includes(q))
     )
-  }, [alumniList, search, batchFilter])
+  }, [alumniList, search, batchFilter, startYearFilter])
 
-  const availableBatches = useMemo(
-    () => Array.from(new Set(alumniList.map((alumni) => alumni.batch).filter((batch): batch is string => Boolean(batch?.trim())))).sort(),
-    [alumniList]
-  )
+  const startYears = useMemo(() => getStartYearOptions(alumniList), [alumniList])
+  const graduationYears = useMemo(() => getGraduationYearOptions(alumniList), [alumniList])
 
   const handleRequestMentorship = (alumni: User) => {
     setCurrentView('mentorship')
@@ -903,17 +1145,30 @@ function AlumniDirectory() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <Select value={batchFilter} onValueChange={setBatchFilter}>
-          <SelectTrigger className="w-full sm:w-64">
-            <SelectValue placeholder="Filter by passout batch" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="ALL">All passout batches</SelectItem>
-            {availableBatches.map((batch) => (
-              <SelectItem key={batch} value={batch}>{batch}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="grid w-full grid-cols-2 gap-3 sm:flex-1">
+          <Select value={startYearFilter} onValueChange={setStartYearFilter}>
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Filter by intake year" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">All intake years</SelectItem>
+              {startYears.map((year) => (
+                <SelectItem key={year} value={String(year)}>{year}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={batchFilter} onValueChange={setBatchFilter}>
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Filter by graduation year" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">All graduation years</SelectItem>
+              {graduationYears.map((year) => (
+                <SelectItem key={year} value={String(year)}>{year}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {/* Results Count */}

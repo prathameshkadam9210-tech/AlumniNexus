@@ -1,9 +1,11 @@
 import { db } from '@/lib/db'
+import { getDepartmentJobScope } from '@/lib/job-scope'
 import { NextRequest, NextResponse } from 'next/server'
 
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url)
+    const actorId = searchParams.get('actorId')
     const postedById = searchParams.get('postedById')
     const type = searchParams.get('type')
     const search = searchParams.get('search')
@@ -11,6 +13,17 @@ export async function GET(req: NextRequest) {
 
     const where: Record<string, unknown> = {}
     if (postedById) where.postedById = postedById
+    if (actorId) {
+      const actor = await db.user.findUnique({
+        where: { id: actorId },
+        select: { role: true, department: true },
+      })
+      if (!actor) return NextResponse.json({ error: 'Actor not found' }, { status: 404 })
+      if (actor.role === 'ADMIN' && actor.department !== 'Administration') {
+        if (!actor.department) return NextResponse.json({ error: 'Admin department is missing' }, { status: 403 })
+        where.AND = [await getDepartmentJobScope(actor.department)]
+      }
+    }
     if (type) where.type = type
     if (status && status !== 'ALL') where.status = status
     if (search) {
@@ -25,7 +38,25 @@ export async function GET(req: NextRequest) {
     const jobs = await db.job.findMany({
       where,
       orderBy: { createdAt: 'desc' },
-      include: {
+      select: {
+        id: true,
+        title: true,
+        company: true,
+        location: true,
+        type: true,
+        salaryMin: true,
+        salaryMax: true,
+        currency: true,
+        description: true,
+        requirements: true,
+        skills: true,
+        experienceRequired: true,
+        postedById: true,
+        status: true,
+        deadline: true,
+        applicantsCount: true,
+        createdAt: true,
+        updatedAt: true,
         postedBy: { select: { name: true, company: true, designation: true } },
       },
     })
@@ -46,6 +77,12 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
     const { title, company, location, type, salaryMin, salaryMax, description, requirements, skills, experienceRequired, postedById, deadline } = body
+    const actor = typeof postedById === 'string'
+      ? await db.user.findUnique({ where: { id: postedById }, select: { id: true, role: true } })
+      : null
+    if (!actor || !['ADMIN', 'PLACEMENT_CELL'].includes(actor.role)) {
+      return NextResponse.json({ error: 'Only placement staff can publish jobs' }, { status: 403 })
+    }
 
     const job = await db.job.create({
       data: {
@@ -75,9 +112,15 @@ export async function POST(req: NextRequest) {
 export async function PUT(req: NextRequest) {
   try {
     const body = await req.json()
-    const { jobId, ...data } = body
+    const { jobId, actorId, ...data } = body
 
     if (!jobId) return NextResponse.json({ error: 'Job ID required' }, { status: 400 })
+    const actor = typeof actorId === 'string'
+      ? await db.user.findUnique({ where: { id: actorId }, select: { role: true } })
+      : null
+    if (!actor || !['ADMIN', 'PLACEMENT_CELL'].includes(actor.role)) {
+      return NextResponse.json({ error: 'Only placement staff can manage jobs' }, { status: 403 })
+    }
 
     const job = await db.job.update({
       where: { id: jobId },
@@ -108,7 +151,14 @@ export async function DELETE(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url)
     const jobId = searchParams.get('id')
+    const actorId = searchParams.get('actorId')
     if (!jobId) return NextResponse.json({ error: 'Job ID required' }, { status: 400 })
+    const actor = typeof actorId === 'string'
+      ? await db.user.findUnique({ where: { id: actorId }, select: { role: true } })
+      : null
+    if (!actor || !['ADMIN', 'PLACEMENT_CELL'].includes(actor.role)) {
+      return NextResponse.json({ error: 'Only placement staff can manage jobs' }, { status: 403 })
+    }
 
     await db.application.deleteMany({ where: { jobId } })
     await db.job.delete({ where: { id: jobId } })

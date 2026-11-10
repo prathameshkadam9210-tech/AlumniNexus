@@ -85,7 +85,18 @@ import {
   Fingerprint,
   Link as LinkIcon,
 } from 'lucide-react'
-import { DEPARTMENTS, getCanonicalDepartment } from '@/lib/departments'
+import { DEPARTMENTS, getDepartmentChartLabel, normalizeDepartment } from '@/lib/departments'
+import { RoleAnalyticsChart, type AnalyticsChartItem } from '@/components/portal/role-analytics-chart'
+import {
+  getGraduationYear,
+  getGraduationYearOptions,
+  getStartYear,
+  getStartYearOptions,
+  getStudyYearLabel,
+  matchesGraduationYear,
+  matchesStartYear,
+  STUDY_YEAR_LABELS,
+} from '@/lib/batches'
 import { getDonationPurposeLabel, IDEA_LAB_PURPOSE } from '@/lib/donation-purposes'
 
 // ==================== HELPERS ====================
@@ -158,49 +169,47 @@ export function UserManagementView() {
 
   const [searchQuery, setSearchQuery] = useState('')
   const [roleFilter, setRoleFilter] = useState<string>('ALL')
+  const [departmentFilter, setDepartmentFilter] = useState('ALL')
+  const [startYearFilter, setStartYearFilter] = useState('ALL')
+  const [batchFilter, setBatchFilter] = useState('ALL')
+  const [classFilter, setClassFilter] = useState('ALL')
   const [currentPage, setCurrentPage] = useState(1)
-  const [loadedActorId, setLoadedActorId] = useState<string | null>(null)
-  const loading = Boolean(currentUser?.id && loadedActorId !== currentUser.id)
+  const [loading, setLoading] = useState(users.length === 0)
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null)
   const [promotionTarget, setPromotionTarget] = useState<string | null>(null)
   const [passoutYear, setPassoutYear] = useState(String(new Date().getFullYear()))
   const perPage = 10
+  const isAdmin = currentUser?.role === 'ADMIN'
+  const isMainAdmin = currentUser?.role === 'ADMIN' && currentUser.department === 'Administration'
+  const startYears = getStartYearOptions(users)
+  const graduationYears = getGraduationYearOptions(users)
 
-  // Refresh the actor-scoped list so a previous admin's cached users are not reused.
+  // Fetch users on mount
   useEffect(() => {
-    const actorId = currentUser?.id
-    if (!actorId) return
-
-    let active = true
-    fetch(`/api/auth?action=users&actorId=${encodeURIComponent(actorId)}`)
-      .then(async (response) => {
-        const data = await response.json()
-        if (!response.ok) throw new Error(data.error || 'Unable to load users')
-        return data
-      })
-      .then((data) => {
-        if (active) {
+    if (users.length === 0) {
+      const actorQuery = currentUser?.id ? `&actorId=${encodeURIComponent(currentUser.id)}` : ''
+      fetch(`/api/auth?action=users${actorQuery}`)
+        .then((r) => r.json())
+        .then((data) => {
           setUsers(Array.isArray(data) ? data : [])
-          setCurrentPage(1)
-        }
-      })
-      .catch((error: unknown) => {
-        if (active) {
-          setUsers([])
-          addToast(error instanceof Error ? error.message : 'Unable to load users', 'error')
-        }
-      })
-      .finally(() => {
-        if (active) setLoadedActorId(actorId)
-      })
-
-    return () => {
-      active = false
+        })
+        .catch(() => {})
+        .finally(() => setLoading(false))
     }
-  }, [currentUser?.id, addToast, setCurrentPage, setUsers])
+  }, [])
 
-  const filteredUsers = users.filter((u) => {
+  const scopedUsers = users.filter((user) =>
+    (!isMainAdmin || departmentFilter === 'ALL' || user.department === departmentFilter) &&
+    (!isMainAdmin || startYearFilter === 'ALL' || matchesStartYear(user, Number(startYearFilter))) &&
+    (!isMainAdmin || batchFilter === 'ALL' || matchesGraduationYear(user, Number(batchFilter))) &&
+    (!isAdmin || classFilter === 'ALL' || getStudyYearLabel(user) === classFilter),
+  )
+  const availableClasses = STUDY_YEAR_LABELS.filter((label) =>
+    scopedUsers.some((user) => getStudyYearLabel(user) === label),
+  )
+
+  const filteredUsers = scopedUsers.filter((u) => {
     const matchesSearch =
       !searchQuery ||
       u.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -215,11 +224,11 @@ export function UserManagementView() {
 
   // Stats
   const stats = {
-    total: users.length,
-    students: users.filter((u) => u.role === 'STUDENT').length,
-    alumni: users.filter((u) => u.role === 'ALUMNI').length,
-    recruiters: users.filter((u) => u.role === 'RECRUITER').length,
-    verified: users.filter((u) => u.isVerified).length,
+    total: scopedUsers.length,
+    students: scopedUsers.filter((u) => u.role === 'STUDENT').length,
+    alumni: scopedUsers.filter((u) => u.role === 'ALUMNI').length,
+    recruiters: scopedUsers.filter((u) => u.role === 'RECRUITER').length,
+    verified: scopedUsers.filter((u) => u.isVerified).length,
   }
 
   const handleSetVerified = async (userId: string, verified: boolean) => {
@@ -356,9 +365,8 @@ export function UserManagementView() {
 
       {/* Filters */}
       <Card>
-        <CardContent className="p-4">
-          <div className="flex flex-col sm:flex-row gap-3">
-            <div className="relative flex-1">
+        <CardContent className="space-y-3 p-4">
+          <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Search by name, email, or role..."
@@ -366,9 +374,10 @@ export function UserManagementView() {
                 onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1) }}
                 className="pl-9"
               />
-            </div>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
             <Select value={roleFilter} onValueChange={(v) => { setRoleFilter(v); setCurrentPage(1) }}>
-              <SelectTrigger className="w-full sm:w-48">
+              <SelectTrigger className="w-full">
                 <SelectValue placeholder="Filter role" />
               </SelectTrigger>
               <SelectContent>
@@ -380,6 +389,40 @@ export function UserManagementView() {
                 <SelectItem value="PLACEMENT_CELL">Placement Cell</SelectItem>
               </SelectContent>
             </Select>
+            {isMainAdmin && (
+              <>
+                <Select value={departmentFilter} onValueChange={(value) => { setDepartmentFilter(value); setCurrentPage(1) }}>
+                  <SelectTrigger className="w-full"><SelectValue placeholder="All Departments" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">All Departments</SelectItem>
+                    {DEPARTMENTS.map((department) => <SelectItem key={department} value={department}>{department}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={startYearFilter} onValueChange={(value) => { setStartYearFilter(value); setCurrentPage(1) }}>
+                  <SelectTrigger className="w-full"><SelectValue placeholder="All Intake Years" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">All Intake Years</SelectItem>
+                    {startYears.map((year) => <SelectItem key={year} value={String(year)}>{year}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={batchFilter} onValueChange={(value) => { setBatchFilter(value); setCurrentPage(1) }}>
+                  <SelectTrigger className="w-full"><SelectValue placeholder="All Graduation Years" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">All Graduation Years</SelectItem>
+                    {graduationYears.map((year) => <SelectItem key={year} value={String(year)}>{year}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </>
+            )}
+            {isAdmin && (
+              <Select value={classFilter} onValueChange={(value) => { setClassFilter(value); setCurrentPage(1) }}>
+                <SelectTrigger className="w-full"><SelectValue placeholder="All study years" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All study years</SelectItem>
+                  {availableClasses.map((studyYear) => <SelectItem key={studyYear} value={studyYear}>{studyYear}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -432,7 +475,7 @@ export function UserManagementView() {
                         </Badge>
                       </TableCell>
                       <TableCell className="hidden lg:table-cell text-sm">
-                        {getCanonicalDepartment(user.department) || '—'}
+                        {user.department || '—'}
                       </TableCell>
                       <TableCell>
                         {(user.role === 'STUDENT' || user.role === 'ALUMNI') ? (
@@ -488,7 +531,7 @@ export function UserManagementView() {
                             <Dialog open={promotionTarget === user.id} onOpenChange={(open) => {
                               if (open) {
                                 setPromotionTarget(user.id)
-                                setPassoutYear(String(new Date().getFullYear()))
+                                setPassoutYear(String(getGraduationYear(user.batch, user.graduationYear) ?? new Date().getFullYear()))
                               } else {
                                 setPromotionTarget(null)
                               }
@@ -507,21 +550,21 @@ export function UserManagementView() {
                                 <DialogHeader>
                                   <DialogTitle>Promote Student to Alumni</DialogTitle>
                                   <DialogDescription>
-                                    Confirm {user.name}&apos;s actual passout year. The batch is recorded as “year-year passout batch”; it is not inferred from the student&apos;s original course duration.
+                                    Confirm {user.name}&apos;s actual graduation year. Their original intake year will be preserved, including for delayed completion.
                                   </DialogDescription>
                                 </DialogHeader>
                                 <div className="space-y-2">
-                                  <Label htmlFor={`passout-year-${user.id}`}>Confirmed passout year</Label>
+                                  <Label htmlFor={`passout-year-${user.id}`}>Actual graduation year</Label>
                                   <Input
                                     id={`passout-year-${user.id}`}
                                     type="number"
-                                    min="1900"
+                                    min={getStartYear(user.batch) ?? 1992}
                                     max={new Date().getFullYear() + 10}
                                     value={passoutYear}
                                     onChange={(event) => setPassoutYear(event.target.value)}
                                   />
                                   <p className="text-sm text-muted-foreground">
-                                    This student will be recorded in the {Number(passoutYear) - 1}-{passoutYear} passout batch.
+                                    Intake year {getStartYear(user.batch) ?? 'not recorded'} will be preserved; graduation year will be {passoutYear}.
                                   </p>
                                 </div>
                                 <DialogFooter>
@@ -632,6 +675,9 @@ interface MetricCardData {
 
 export function AnalyticsView() {
   const currentUser = useAppStore((s) => s.currentUser)
+  const isDepartmentAdmin = currentUser?.role === 'ADMIN' &&
+    !!currentUser.department &&
+    currentUser.department !== 'Administration'
   const analytics = useAppStore((s) => s.analytics)
   const users = useAppStore((s) => s.users)
   const jobs = useAppStore((s) => s.jobs)
@@ -643,16 +689,27 @@ export function AnalyticsView() {
 
   const [loading, setLoading] = useState(analytics.length === 0)
   const [departmentFilter, setDepartmentFilter] = useState('')
+  const [startYearFilter, setStartYearFilter] = useState('')
+  const [batchFilter, setBatchFilter] = useState('')
+  const [departmentStudentDistribution, setDepartmentStudentDistribution] = useState<AnalyticsChartItem[]>([])
+  const startYears = getStartYearOptions(users)
+  const graduationYears = getGraduationYearOptions(users)
 
-  const loadAnalytics = async (department = departmentFilter) => {
+  const loadAnalytics = async (department = departmentFilter, startYear = startYearFilter, graduationYear = batchFilter) => {
     setLoading(true)
     try {
-      const query = department ? `?department=${encodeURIComponent(department)}` : ''
+      const params = new URLSearchParams()
+      if (currentUser?.id) params.set('actorId', currentUser.id)
+      if (department) params.set('department', department)
+      if (startYear) params.set('startYear', startYear)
+      if (graduationYear) params.set('graduationYear', graduationYear)
+      const query = params.size > 0 ? `?${params.toString()}` : ''
       const response = await fetch(`/api/analytics${query}`)
       const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Unable to load analytics')
       setAnalytics(Array.isArray(data) ? data : [])
-    } catch {
-      addToast('Unable to load analytics', 'error')
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : 'Unable to load analytics', 'error')
     } finally {
       setLoading(false)
     }
@@ -665,21 +722,73 @@ export function AnalyticsView() {
     }
   }, [])
 
+  useEffect(() => {
+    if (!isDepartmentAdmin || !currentUser?.id) return
+    let cancelled = false
+
+    const loadDepartmentStudentDistribution = async () => {
+      try {
+        const params = new URLSearchParams({
+          actorId: currentUser.id,
+          departmentDistribution: 'true',
+        })
+        if (startYearFilter) params.set('startYear', startYearFilter)
+        if (batchFilter) params.set('graduationYear', batchFilter)
+        const response = await fetch(`/api/analytics?${params.toString()}`)
+        const data = await response.json()
+        if (!response.ok) throw new Error(data.error || 'Unable to load department student distribution')
+        if (!Array.isArray(data)) throw new Error('Invalid department student distribution response')
+
+        const distribution = data.map((item: unknown) => {
+          if (!item || typeof item !== 'object') {
+            throw new Error('Invalid department student distribution item')
+          }
+          const department = Reflect.get(item, 'department')
+          const value = Reflect.get(item, 'value')
+          if (typeof department !== 'string' || typeof value !== 'number') {
+            throw new Error('Invalid department student distribution item')
+          }
+          return {
+            label: getDepartmentChartLabel(department),
+            value,
+            highlighted: normalizeDepartment(department) === normalizeDepartment(currentUser.department),
+          }
+        }).sort((a: AnalyticsChartItem, b: AnalyticsChartItem) => b.value - a.value)
+
+        if (!cancelled) setDepartmentStudentDistribution(distribution)
+      } catch (error) {
+        if (!cancelled) {
+          addToast(error instanceof Error ? error.message : 'Unable to load department student distribution', 'error')
+        }
+      }
+    }
+
+    void loadDepartmentStudentDistribution()
+    return () => { cancelled = true }
+  }, [currentUser?.id, currentUser?.department, isDepartmentAdmin, startYearFilter, batchFilter, addToast])
+
   const getMetric = (key: string): number => {
     const item = analytics.find((a) => a.metric === key)
     return item?.value ?? 0
   }
 
-  const totalUsers = getMetric('total_users') || users.length
-  const totalJobs = getMetric('total_jobs') || jobs.length
-  const openPositions = getMetric('open_jobs') || jobs.filter((j) => j.status === 'OPEN').length
-  const totalApps = getMetric('total_applications') || applications.length
-  const pendingApps = getMetric('pending_applications') || applications.filter((a) => a.status === 'PENDING').length
-  const acceptedApps = getMetric('accepted_applications') || applications.filter((a) => a.status === 'ACCEPTED').length
-  const activeMentorships = getMetric('active_mentorships') || mentorships.filter((m) => m.status === 'ACCEPTED').length
-  const totalEvents = getMetric('total_events') || events.length
-  const verifiedUsers = getMetric('verified_users') || users.filter((u) => u.isVerified).length
-  const placementRate = totalUsers > 0 ? Math.round((acceptedApps / totalUsers) * 100) : 0
+  const getMetricOrFallback = (key: string, fallback: number): number =>
+    analytics.find((item) => item.metric === key)?.value ?? fallback
+  const totalUsers = getMetricOrFallback('total_users', users.length)
+  const totalStudents = getMetricOrFallback('total_students', users.filter((user) => user.role === 'STUDENT').length)
+  const totalJobs = getMetricOrFallback('total_jobs', jobs.length)
+  const openPositions = getMetricOrFallback('open_jobs', jobs.filter((j) => j.status === 'OPEN').length)
+  const totalApps = getMetricOrFallback('total_applications', applications.length)
+  const pendingApps = getMetricOrFallback('pending_applications', applications.filter((a) => a.status === 'PENDING').length)
+  const acceptedApps = getMetricOrFallback('accepted_applications', applications.filter((a) => a.status === 'ACCEPTED').length)
+  const activeMentorships = getMetricOrFallback('active_mentorships', mentorships.filter((m) => m.status === 'ACCEPTED').length)
+  const totalEvents = getMetricOrFallback('total_events', events.length)
+  const verifiedUsers = getMetricOrFallback('verified_users', users.filter((u) => u.isVerified).length)
+  const selectedStudents = getMetric('selected_students')
+  const placedStudents = getMetric('placed_students')
+  const onCampusPlacements = getMetric('on_campus_placements')
+  const offCampusPlacements = getMetric('off_campus_placements')
+  const placementRate = totalStudents > 0 ? Math.round((placedStudents / totalStudents) * 100) : 0
 
   const metrics: MetricCardData[] = [
     { label: 'Total Users', metric: 'total_users', icon: Users, color: 'text-emerald-600', bgColor: 'bg-emerald-100 dark:bg-emerald-900/30' },
@@ -692,6 +801,10 @@ export function AnalyticsView() {
     { label: 'Events', metric: 'total_events', icon: Calendar, color: 'text-orange-600', bgColor: 'bg-orange-100 dark:bg-orange-900/30' },
     { label: 'Verified Users', metric: 'verified_users', icon: Shield, color: 'text-teal-600', bgColor: 'bg-teal-100 dark:bg-teal-900/30' },
     { label: 'Placement Rate', metric: 'placement_rate', icon: BarChart3, color: 'text-indigo-600', bgColor: 'bg-indigo-100 dark:bg-indigo-900/30' },
+    { label: 'Selected Students', metric: 'selected_students', icon: UserCheck, color: 'text-blue-600', bgColor: 'bg-blue-100 dark:bg-blue-900/30' },
+    { label: 'Placed Students', metric: 'placed_students', icon: GraduationCap, color: 'text-emerald-600', bgColor: 'bg-emerald-100 dark:bg-emerald-900/30' },
+    { label: 'On-campus Outcomes', metric: 'on_campus_placements', icon: Building, color: 'text-cyan-600', bgColor: 'bg-cyan-100 dark:bg-cyan-900/30' },
+    { label: 'Off-campus Outcomes', metric: 'off_campus_placements', icon: Briefcase, color: 'text-violet-600', bgColor: 'bg-violet-100 dark:bg-violet-900/30' },
   ]
 
   const metricValues: Record<string, number> = {
@@ -705,20 +818,45 @@ export function AnalyticsView() {
     total_events: totalEvents,
     verified_users: verifiedUsers,
     placement_rate: placementRate,
+    selected_students: selectedStudents,
+    placed_students: placedStudents,
+    on_campus_placements: onCampusPlacements,
+    off_campus_placements: offCampusPlacements,
   }
 
   const maxMetricVal = Math.max(...Object.values(metricValues), 1)
 
   // Department-wise breakdown
   const deptMap: Record<string, { total: number; roles: Record<string, number> }> = {}
-  const allUsers = users.length > 0 ? users : []
+  const allUsers = users.filter((user) =>
+    (!departmentFilter || normalizeDepartment(user.department) === normalizeDepartment(departmentFilter)) &&
+    (!startYearFilter || matchesStartYear(user, Number(startYearFilter))) &&
+    (!batchFilter || matchesGraduationYear(user, Number(batchFilter))),
+  )
   for (const u of allUsers) {
-    const dept = getCanonicalDepartment(u.department) || 'Unspecified'
+    const dept = u.department || 'Unspecified'
     if (!deptMap[dept]) deptMap[dept] = { total: 0, roles: {} }
     deptMap[dept].total++
     deptMap[dept].roles[u.role] = (deptMap[dept].roles[u.role] || 0) + 1
   }
   const departments = Object.entries(deptMap).sort((a, b) => b[1].total - a[1].total)
+  const studyYearCounts = new Map<string, number>()
+  const roleCounts = new Map<string, number>()
+  for (const user of allUsers) {
+    const studyYear = getStudyYearLabel(user)
+    if (studyYear) studyYearCounts.set(studyYear, (studyYearCounts.get(studyYear) || 0) + 1)
+    roleCounts.set(user.role, (roleCounts.get(user.role) || 0) + 1)
+  }
+  const studyYearData = STUDY_YEAR_LABELS
+    .filter((label) => studyYearCounts.has(label))
+    .map((label) => ({ label, value: studyYearCounts.get(label) || 0 }))
+  const roleData = Array.from(roleCounts, ([label, value]) => ({ label: label.replace('_', ' '), value }))
+  const departmentStudentChartData = isDepartmentAdmin
+    ? departmentStudentDistribution
+    : departments.map(([department, data]) => ({
+      label: getDepartmentChartLabel(department),
+      value: data.roles.STUDENT || 0,
+    }))
 
   // Monthly trends (from analytics data with month/year)
   const monthlyData = analytics.filter((a) => a.month && a.year)
@@ -771,20 +909,69 @@ export function AnalyticsView() {
           <h2 className="text-2xl font-bold tracking-tight">Analytics</h2>
           <p className="text-muted-foreground text-sm">Platform-wide metrics and insights.</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {currentUser?.role === 'ADMIN' && currentUser.department === 'Administration' && (
-            <Select value={departmentFilter || 'ALL'} onValueChange={(value) => { const next = value === 'ALL' ? '' : value; setDepartmentFilter(next); void loadAnalytics(next) }}>
-              <SelectTrigger className="w-56"><SelectValue placeholder="All Departments" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">All Departments</SelectItem>
-                {DEPARTMENTS.map((department) => <SelectItem key={department} value={department}>{department}</SelectItem>)}
-              </SelectContent>
-            </Select>
+        <div className="flex flex-nowrap items-center gap-2 overflow-x-auto pb-1">
+          {(currentUser?.role === 'PLACEMENT_CELL' || currentUser?.role === 'ADMIN') && (
+            <>
+              {(currentUser?.role === 'PLACEMENT_CELL' || currentUser?.department === 'Administration') && (
+                <Select value={departmentFilter || 'ALL'} onValueChange={(value) => { const next = value === 'ALL' ? '' : value; setDepartmentFilter(next); void loadAnalytics(next) }}>
+                  <SelectTrigger className="w-56"><SelectValue placeholder="All Departments" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">All Departments</SelectItem>
+                    {DEPARTMENTS.map((department) => <SelectItem key={department} value={department}>{department}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              )}
+              <div className="flex shrink-0 items-center gap-2">
+                <Select value={startYearFilter || 'ALL'} onValueChange={(value) => { const next = value === 'ALL' ? '' : value; setStartYearFilter(next); void loadAnalytics(departmentFilter, next) }}>
+                  <SelectTrigger className="w-44"><SelectValue placeholder="All Intake Years" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">All Intake Years</SelectItem>
+                    {startYears.map((year) => <SelectItem key={year} value={String(year)}>{year}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={batchFilter || 'ALL'} onValueChange={(value) => { const next = value === 'ALL' ? '' : value; setBatchFilter(next); void loadAnalytics(departmentFilter, startYearFilter, next) }}>
+                  <SelectTrigger className="w-48"><SelectValue placeholder="All Graduation Years" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">All Graduation Years</SelectItem>
+                    {graduationYears.map((year) => <SelectItem key={year} value={String(year)}>{year}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button variant="outline" onClick={handleExportCSV} className="shrink-0 gap-2">
+                <Download className="w-4 h-4" /> Export CSV
+              </Button>
+            </>
           )}
-          <Button variant="outline" onClick={handleExportCSV} className="gap-2">
-            <Download className="w-4 h-4" /> Export CSV
-          </Button>
         </div>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <RoleAnalyticsChart
+          title="Student distribution by department"
+          data={departmentStudentChartData}
+        />
+        <RoleAnalyticsChart
+          title="Student and alumni distribution by class"
+          data={studyYearData}
+          color="#0891b2"
+        />
+        {currentUser?.role === 'ADMIN' && (
+          <RoleAnalyticsChart
+            title="User distribution by role"
+            data={roleData}
+            color="#7c3aed"
+          />
+        )}
+        <RoleAnalyticsChart
+          title="Selected and placed by campus route"
+          data={[
+            { label: 'On campus', value: onCampusPlacements },
+            { label: 'Off campus', value: offCampusPlacements },
+            { label: 'Selected', value: selectedStudents },
+            { label: 'Placed', value: placedStudents },
+          ]}
+          color="#4f46e5"
+        />
       </div>
 
       {/* Metric Cards with Bar Representations */}
@@ -836,13 +1023,14 @@ export function AnalyticsView() {
                     <TableHead className="text-center">Students</TableHead>
                     <TableHead className="text-center hidden sm:table-cell">Alumni</TableHead>
                     <TableHead className="text-center hidden md:table-cell">Recruiters</TableHead>
+                    <TableHead className="text-center hidden lg:table-cell">Admins / Placement</TableHead>
                     <TableHead className="text-right">Total</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {departments.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                         No data available.
                       </TableCell>
                     </TableRow>
@@ -853,6 +1041,7 @@ export function AnalyticsView() {
                         <TableCell className="text-center text-sm">{data.roles['STUDENT'] || 0}</TableCell>
                         <TableCell className="text-center text-sm hidden sm:table-cell">{data.roles['ALUMNI'] || 0}</TableCell>
                         <TableCell className="text-center text-sm hidden md:table-cell">{data.roles['RECRUITER'] || 0}</TableCell>
+                        <TableCell className="text-center text-sm hidden lg:table-cell">{(data.roles['ADMIN'] || 0) + (data.roles['PLACEMENT_CELL'] || 0)}</TableCell>
                         <TableCell className="text-right font-semibold text-sm">{data.total}</TableCell>
                       </TableRow>
                     ))
@@ -971,6 +1160,7 @@ const PAYMENT_TYPE_COLORS: Record<string, string> = {
 
 export function PaymentsView() {
   const currentUser = useAppStore((s) => s.currentUser)
+  const users = useAppStore((s) => s.users)
   const addToast = useAppStore((s) => s.addToast)
 
   const [payments, setPayments] = useState<PaymentItem[]>([])
@@ -993,27 +1183,60 @@ export function PaymentsView() {
   })
   const [ideaLabTargetInput, setIdeaLabTargetInput] = useState('')
   const [savingIdeaLabTarget, setSavingIdeaLabTarget] = useState(false)
+  const [departmentFilter, setDepartmentFilter] = useState('')
+  const [batchFilter, setBatchFilter] = useState('')
 
   const isAdmin = currentUser?.role === 'ADMIN'
   const isAlumni = currentUser?.role === 'ALUMNI'
   const isStudent = currentUser?.role === 'STUDENT'
   const isMainAdmin = currentUser?.role === 'ADMIN' && currentUser.department === 'Administration'
+  const startYears = getStartYearOptions(users)
+  const graduationYears = getGraduationYearOptions(users)
+  const [startYearFilter, setStartYearFilter] = useState('')
+
+  const loadPayments = useCallback(async () => {
+    if (!currentUser) return
+    const params = new URLSearchParams()
+    if (isAdmin) {
+      params.set('actorId', currentUser.id)
+      if (isMainAdmin && departmentFilter) params.set('department', departmentFilter)
+      if (isMainAdmin && startYearFilter) params.set('startYear', startYearFilter)
+      if (isMainAdmin && batchFilter) params.set('graduationYear', batchFilter)
+    } else {
+      params.set('userId', currentUser.id)
+    }
+
+    try {
+      const response = await fetch(`/api/payments?${params.toString()}`)
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Unable to load payments')
+      setPayments(Array.isArray(data) ? data : [])
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : 'Unable to load payments', 'error')
+    } finally {
+      setLoading(false)
+    }
+  }, [addToast, batchFilter, currentUser, departmentFilter, isAdmin, isMainAdmin, startYearFilter])
 
   useEffect(() => {
-    const url = isAdmin ? '/api/payments' : `/api/payments?userId=${currentUser?.id}`
-    fetch(url)
-      .then((r) => r.json())
-      .then((data) => setPayments(Array.isArray(data) ? data : []))
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [currentUser?.id, isAdmin])
+    const timer = window.setTimeout(() => { void loadPayments() }, 0)
+    return () => window.clearTimeout(timer)
+  }, [loadPayments])
 
   const loadFundraisingSummary = useCallback(async (): Promise<FundraisingSummary> => {
-    const response = await fetch('/api/fundraising')
+    const params = new URLSearchParams()
+    if (isMainAdmin && currentUser) {
+      params.set('actorId', currentUser.id)
+      if (departmentFilter) params.set('department', departmentFilter)
+      if (startYearFilter) params.set('startYear', startYearFilter)
+      if (batchFilter) params.set('graduationYear', batchFilter)
+    }
+    const query = params.size > 0 ? `?${params.toString()}` : ''
+    const response = await fetch(`/api/fundraising${query}`)
     const data = await response.json()
     if (!response.ok) throw new Error(data.error || 'Unable to load Idea Lab fundraising data')
     return data
-  }, [])
+  }, [batchFilter, currentUser, departmentFilter, isMainAdmin, startYearFilter])
 
   useEffect(() => {
     let cancelled = false
@@ -1177,6 +1400,41 @@ export function PaymentsView() {
           {isAdmin ? 'View and manage all platform payments.' : 'View your payment history and manage pending payments.'}
         </p>
       </div>
+
+      {isMainAdmin && (
+        <div className="flex flex-wrap items-center gap-3">
+          <Label htmlFor="payments-department-filter">Department</Label>
+          <Select value={departmentFilter || 'ALL'} onValueChange={(value) => setDepartmentFilter(value === 'ALL' ? '' : value)}>
+            <SelectTrigger id="payments-department-filter" className="w-56"><SelectValue placeholder="All Departments" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">All Departments</SelectItem>
+              {DEPARTMENTS.map((department) => <SelectItem key={department} value={department}>{department}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label htmlFor="payments-intake-filter">Intake</Label>
+              <Select value={startYearFilter || 'ALL'} onValueChange={(value) => setStartYearFilter(value === 'ALL' ? '' : value)}>
+                <SelectTrigger id="payments-intake-filter" className="w-full"><SelectValue placeholder="All Intake Years" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All Intake Years</SelectItem>
+                  {startYears.map((year) => <SelectItem key={year} value={String(year)}>{year}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="payments-batch-filter">Batch</Label>
+              <Select value={batchFilter || 'ALL'} onValueChange={(value) => setBatchFilter(value === 'ALL' ? '' : value)}>
+                <SelectTrigger id="payments-batch-filter" className="w-full"><SelectValue placeholder="All Graduation Years" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All Graduation Years</SelectItem>
+                  {graduationYears.map((year) => <SelectItem key={year} value={String(year)}>{year}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -2176,36 +2434,31 @@ export function NotificationsView() {
   const handleMarkAllRead = async () => {
     if (!currentUser) return
     try {
-      const response = await fetch('/api/events', {
+      await fetch('/api/events', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: currentUser.id, isRead: true }),
       })
-      const result = await response.json()
-      if (!response.ok) throw new Error(result.error || 'Unable to mark notifications as read')
       notifications
         .filter((n) => !n.isRead)
         .forEach((n) => markNotificationRead(n.id))
       addToast('All notifications marked as read', 'success')
-    } catch (error) {
-      addToast(error instanceof Error ? error.message : 'Unable to mark notifications as read', 'error')
+    } catch {
+      // silent
     }
   }
 
   const handleNotificationClick = async (notif: typeof notifications[0]) => {
     if (!notif.isRead) {
+      markNotificationRead(notif.id)
       try {
-        const response = await fetch('/api/events', {
+        await fetch('/api/events', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ notificationId: notif.id, userId: currentUser?.id, isRead: true }),
+          body: JSON.stringify({ notificationId: notif.id, isRead: true }),
         })
-        const result = await response.json()
-        if (!response.ok) throw new Error(result.error || 'Unable to mark notification as read')
-        markNotificationRead(notif.id)
-      } catch (error) {
-        addToast(error instanceof Error ? error.message : 'Unable to mark notification as read', 'error')
-        return
+      } catch {
+        // silent
       }
     }
     if (notif.link) {

@@ -3,7 +3,7 @@
   "version": "0.2.1",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3000",
+    "dev": "next dev --webpack -p 3000",
     "build": "next build",
     "start": "node .next/standalone/server.js",
     "lint": "eslint .",
@@ -12,6 +12,7 @@
     "db:migrate": "prisma migrate dev",
     "db:reset": "prisma migrate reset",
     "db:seed": "npx tsx prisma/seed.ts",
+    "db:normalize-departments": "npx tsx scripts/normalize-departments.ts",
     "seed": "npm run db:push && npm run db:seed",
     "setup": "npm run db:push && npm run db:generate && npm run db:seed",
     "postbuild": "node -e \"const fs=require('fs');const p='.next/standalone';if(fs.existsSync(p)){['.next/static','public'].forEach(d=>{const s=d;const t=p+'/'+d;try{fs.cpSync(s,t,{recursive:true});}catch(e){}});}\""

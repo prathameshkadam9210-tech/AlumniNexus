@@ -709,7 +709,7 @@ function NotificationCard({ notification, onClick }: { notification: Notificatio
 // ============================================================
 
 function NotificationsViewContent() {
-  const { currentUser, notifications, markNotificationRead, addToast, setLoading } = useAppStore()
+  const { notifications, markNotificationRead, addToast, setLoading } = useAppStore()
   const [filter, setFilter] = useState<'all' | 'unread'>('all')
   const [markingAll, setMarkingAll] = useState(false)
 
@@ -733,13 +733,14 @@ function NotificationsViewContent() {
       const res = await fetch('/api/events', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ notificationId: id, userId: currentUser?.id, isRead: true }),
+        body: JSON.stringify({ notificationId: id, isRead: true }),
       })
-      const result = await res.json()
-      if (!res.ok) throw new Error(result.error || 'Unable to mark notification as read')
+      if (res.ok) {
+        markNotificationRead(id)
+      }
+    } catch {
+      // Still mark locally
       markNotificationRead(id)
-    } catch (error) {
-      addToast(error instanceof Error ? error.message : 'Unable to mark notification as read', 'error')
     }
   }
 
@@ -748,17 +749,21 @@ function NotificationsViewContent() {
     setLoading(true)
     try {
       const unread = notifications.filter(n => !n.isRead)
-      const response = await fetch('/api/events', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: currentUser?.id, isRead: true }),
-      })
-      const result = await response.json()
-      if (!response.ok) throw new Error(result.error || 'Unable to mark notifications as read')
-      unread.forEach((notification) => markNotificationRead(notification.id))
+      await Promise.allSettled(
+        unread.map(async (n) => {
+          try {
+            await fetch('/api/events', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ notificationId: n.id, isRead: true }),
+            })
+            markNotificationRead(n.id)
+          } catch {
+            // ignore individual failures
+          }
+        })
+      )
       addToast('All notifications marked as read', 'success')
-    } catch (error) {
-      addToast(error instanceof Error ? error.message : 'Unable to mark notifications as read', 'error')
     } finally {
       setMarkingAll(false)
       setLoading(false)
