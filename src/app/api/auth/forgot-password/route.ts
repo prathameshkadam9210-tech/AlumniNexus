@@ -1,4 +1,5 @@
 import { db } from '@/lib/db'
+import { isEmailConfigured, sendOtpEmail } from '@/lib/email'
 import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 
@@ -54,13 +55,44 @@ export async function POST(req: NextRequest) {
       },
     })
 
-    // Log OTP to console for demo purposes
-    console.log(`🔑 Password Reset OTP for ${email}: ${otp} (expires in 10 minutes)`)
+    if (isEmailConfigured()) {
+      try {
+        await sendOtpEmail({ to: email, otp, purpose: 'password-reset' })
+      } catch (error) {
+        console.error('Password reset email error:', error)
+        await db.user.update({
+          where: { id: user.id },
+          data: { verificationOtp: null, otpExpiry: null },
+        })
+        const smtpCode = error && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
+          ? error.code
+          : ''
+        const message = smtpCode === 'EAUTH'
+          ? 'SMTP authentication failed. Check the SMTP username and app password.'
+          : ['ECONNECTION', 'ETIMEDOUT', 'ESOCKET'].includes(smtpCode)
+            ? 'Could not connect to the SMTP server. Check the SMTP host, port, TLS settings, and network access.'
+            : 'Unable to send password reset email. Check the SMTP settings and server logs.'
+        return NextResponse.json({ error: message }, { status: 502 })
+      }
+    } else if (process.env.NODE_ENV === 'production') {
+      await db.user.update({
+        where: { id: user.id },
+        data: { verificationOtp: null, otpExpiry: null },
+      })
+      return NextResponse.json(
+        { error: 'Password reset email is not configured. Please contact the college administrator.' },
+        { status: 503 }
+      )
+    } else {
+      console.log(`Password Reset OTP generated for ${email} (expires in 10 minutes)`)
+    }
 
     return NextResponse.json({
       success: true,
-      message: `Password reset OTP sent to ${email}. Check the server console for demo OTP.`,
-      demoOTP: otp,
+      message: isEmailConfigured()
+        ? `Password reset OTP sent to ${email}.`
+        : `OTP generated for ${email}. Add SMTP settings to send it by email.`,
+      ...(!isEmailConfigured() && process.env.NODE_ENV !== 'production' ? { demoOTP: otp } : {}),
     })
   } catch (error) {
     console.error('Forgot password error:', error)

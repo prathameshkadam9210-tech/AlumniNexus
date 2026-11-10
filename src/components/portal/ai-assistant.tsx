@@ -289,7 +289,7 @@ export function AIAssistantView() {
       return currentUser.skills.split(',').map(s => s.trim()).filter(Boolean)
     }
     return []
-  }, [currentUser?.skills])
+  }, [currentUser])
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -321,28 +321,34 @@ Feel free to ask me anything about your career development!`,
         createdAt: new Date(),
         updatedAt: new Date(),
       }
-      setHistories([newHistory])
-      setMessages([welcomeMsg])
-      setActiveHistoryId(newHistory.id)
+      const timer = window.setTimeout(() => {
+        setHistories([newHistory])
+        setMessages([welcomeMsg])
+        setActiveHistoryId(newHistory.id)
+      }, 0)
+      return () => window.clearTimeout(timer)
     }
   }, [])
 
   // Update active history messages
   useEffect(() => {
     if (!activeHistoryId || messages.length === 0) return
-    setHistories(prev =>
-      prev.map(h => {
-        if (h.id !== activeHistoryId) return h
-        const firstUserMsg = messages.find(m => m.role === 'user')
-        return {
-          ...h,
-          messages,
-          title: firstUserMsg ? firstUserMsg.content.slice(0, 40) + (firstUserMsg.content.length > 40 ? '...' : '') : h.title,
-          preview: messages[messages.length - 1]?.content.slice(0, 60) + (messages[messages.length - 1]?.content.length > 60 ? '...' : '') || '',
-          updatedAt: new Date(),
-        }
-      })
-    )
+    const timer = window.setTimeout(() => {
+      setHistories(prev =>
+        prev.map(h => {
+          if (h.id !== activeHistoryId) return h
+          const firstUserMsg = messages.find(m => m.role === 'user')
+          return {
+            ...h,
+            messages,
+            title: firstUserMsg ? firstUserMsg.content.slice(0, 40) + (firstUserMsg.content.length > 40 ? '...' : '') : h.title,
+            preview: messages[messages.length - 1]?.content.slice(0, 60) + (messages[messages.length - 1]?.content.length > 60 ? '...' : '') || '',
+            updatedAt: new Date(),
+          }
+        })
+      )
+    }, 0)
+    return () => window.clearTimeout(timer)
   }, [messages, activeHistoryId])
 
   const createNewChat = () => {

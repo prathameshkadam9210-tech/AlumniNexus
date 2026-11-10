@@ -1,4 +1,5 @@
 import { db } from '@/lib/db'
+import { isEmailConfigured, sendOtpEmail } from '@/lib/email'
 import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 
@@ -6,7 +7,7 @@ import crypto from 'crypto'
 const otpStore = new Map<string, { otp: string; expiry: number; email: string }>()
 
 // Valid college email domain
-const VALID_EMAIL_DOMAIN = '.jjmcoe.ac.in'
+const VALID_EMAIL_DOMAIN = '@jjmcoe.ac.in'
 
 function generateOTP(): string {
   return Math.floor(100000 + Math.random() * 900000).toString()
@@ -22,7 +23,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Email is required' }, { status: 400 })
     }
 
-    // Validate email domain - only .jjmcoe.ac.in is accepted
+    // Validate email domain - only @jjmcoe.ac.in is accepted
     if (!email.toLowerCase().endsWith(VALID_EMAIL_DOMAIN)) {
       return NextResponse.json(
         {
@@ -59,14 +60,23 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    // Log OTP to console for demo purposes (in production, send email)
-    console.log(`📧 OTP for ${email}: ${otp} (expires in 10 minutes)`)
+    if (isEmailConfigured()) {
+      try {
+        await sendOtpEmail({ to: email, otp, purpose: 'verification' })
+      } catch (error) {
+        console.error('Verification email error:', error)
+        return NextResponse.json({ error: 'Unable to send verification email. Check SMTP settings.' }, { status: 500 })
+      }
+    } else {
+      console.log(`Verification OTP for ${email}: ${otp} (expires in 10 minutes)`)
+    }
 
     return NextResponse.json({
       success: true,
-      message: `OTP sent to ${email}. Check the server console for demo OTP.`,
-      // In demo mode, return the OTP so the frontend can display it
-      demoOTP: otp,
+      message: isEmailConfigured()
+        ? `OTP sent to ${email}.`
+        : `OTP generated for ${email}. Add SMTP settings to send it by email.`,
+      ...(!isEmailConfigured() ? { demoOTP: otp } : {}),
     })
   } catch (error) {
     console.error('Send OTP error:', error)

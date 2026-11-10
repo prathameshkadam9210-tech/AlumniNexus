@@ -85,6 +85,19 @@ import {
   Fingerprint,
   Link as LinkIcon,
 } from 'lucide-react'
+import { DEPARTMENTS, getDepartmentChartLabel, normalizeDepartment } from '@/lib/departments'
+import { RoleAnalyticsChart, type AnalyticsChartItem } from '@/components/portal/role-analytics-chart'
+import {
+  getGraduationYear,
+  getGraduationYearOptions,
+  getStartYear,
+  getStartYearOptions,
+  getStudyYearLabel,
+  matchesGraduationYear,
+  matchesStartYear,
+  STUDY_YEAR_LABELS,
+} from '@/lib/batches'
+import { getDonationPurposeLabel, IDEA_LAB_PURPOSE } from '@/lib/donation-purposes'
 
 // ==================== HELPERS ====================
 
@@ -156,16 +169,27 @@ export function UserManagementView() {
 
   const [searchQuery, setSearchQuery] = useState('')
   const [roleFilter, setRoleFilter] = useState<string>('ALL')
+  const [departmentFilter, setDepartmentFilter] = useState('ALL')
+  const [startYearFilter, setStartYearFilter] = useState('ALL')
+  const [batchFilter, setBatchFilter] = useState('ALL')
+  const [classFilter, setClassFilter] = useState('ALL')
   const [currentPage, setCurrentPage] = useState(1)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(users.length === 0)
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
+  const [updatingUserId, setUpdatingUserId] = useState<string | null>(null)
+  const [promotionTarget, setPromotionTarget] = useState<string | null>(null)
+  const [passoutYear, setPassoutYear] = useState(String(new Date().getFullYear()))
   const perPage = 10
+  const isAdmin = currentUser?.role === 'ADMIN'
+  const isMainAdmin = currentUser?.role === 'ADMIN' && currentUser.department === 'Administration'
+  const startYears = getStartYearOptions(users)
+  const graduationYears = getGraduationYearOptions(users)
 
   // Fetch users on mount
   useEffect(() => {
     if (users.length === 0) {
-      setLoading(true)
-      fetch('/api/auth?action=users')
+      const actorQuery = currentUser?.id ? `&actorId=${encodeURIComponent(currentUser.id)}` : ''
+      fetch(`/api/auth?action=users${actorQuery}`)
         .then((r) => r.json())
         .then((data) => {
           setUsers(Array.isArray(data) ? data : [])
@@ -175,7 +199,17 @@ export function UserManagementView() {
     }
   }, [])
 
-  const filteredUsers = users.filter((u) => {
+  const scopedUsers = users.filter((user) =>
+    (!isMainAdmin || departmentFilter === 'ALL' || user.department === departmentFilter) &&
+    (!isMainAdmin || startYearFilter === 'ALL' || matchesStartYear(user, Number(startYearFilter))) &&
+    (!isMainAdmin || batchFilter === 'ALL' || matchesGraduationYear(user, Number(batchFilter))) &&
+    (!isAdmin || classFilter === 'ALL' || getStudyYearLabel(user) === classFilter),
+  )
+  const availableClasses = STUDY_YEAR_LABELS.filter((label) =>
+    scopedUsers.some((user) => getStudyYearLabel(user) === label),
+  )
+
+  const filteredUsers = scopedUsers.filter((u) => {
     const matchesSearch =
       !searchQuery ||
       u.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -190,26 +224,72 @@ export function UserManagementView() {
 
   // Stats
   const stats = {
-    total: users.length,
-    students: users.filter((u) => u.role === 'STUDENT').length,
-    alumni: users.filter((u) => u.role === 'ALUMNI').length,
-    recruiters: users.filter((u) => u.role === 'RECRUITER').length,
-    verified: users.filter((u) => u.isVerified).length,
+    total: scopedUsers.length,
+    students: scopedUsers.filter((u) => u.role === 'STUDENT').length,
+    alumni: scopedUsers.filter((u) => u.role === 'ALUMNI').length,
+    recruiters: scopedUsers.filter((u) => u.role === 'RECRUITER').length,
+    verified: scopedUsers.filter((u) => u.isVerified).length,
   }
 
-  const handleToggleVerified = async (userId: string, current: boolean) => {
+  const handleSetVerified = async (userId: string, verified: boolean) => {
+    setUpdatingUserId(userId)
     try {
       const res = await fetch('/api/auth', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, isVerified: !current }),
+        body: JSON.stringify({ userId, actorId: currentUser?.id, isVerified: verified }),
       })
-      if (res.ok) {
-        updateUser(userId, { isVerified: !current })
-        addToast(`User ${!current ? 'verified' : 'unverified'} successfully`, 'success')
+      const updatedUser = await res.json()
+      if (!res.ok) {
+        throw new Error(updatedUser.error || 'Failed to update verification')
       }
-    } catch {
-      addToast('Failed to update verification', 'error')
+      updateUser(userId, {
+        isVerified: updatedUser.isVerified,
+        verificationStatus: updatedUser.verificationStatus,
+      })
+      addToast(`User ${verified ? 'approved' : 'rejected'} successfully`, 'success')
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : 'Failed to update verification', 'error')
+    } finally {
+      setUpdatingUserId(null)
+    }
+  }
+
+  const handlePromoteToAlumni = async () => {
+    if (!promotionTarget || !currentUser) return
+    const year = Number(passoutYear)
+    if (!Number.isInteger(year)) {
+      addToast('Enter a valid passout year', 'error')
+      return
+    }
+
+    setUpdatingUserId(promotionTarget)
+    try {
+      const res = await fetch('/api/auth', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: promotionTarget,
+          actorId: currentUser.id,
+          role: 'ALUMNI',
+          passoutYear: year,
+        }),
+      })
+      const updatedUser = await res.json()
+      if (!res.ok) {
+        throw new Error(updatedUser.error || 'Failed to promote student')
+      }
+      updateUser(promotionTarget, {
+        role: 'ALUMNI',
+        batch: updatedUser.batch,
+        graduationYear: updatedUser.graduationYear,
+      })
+      setPromotionTarget(null)
+      addToast(`Student promoted to alumni for ${updatedUser.batch}`, 'success')
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : 'Failed to promote student', 'error')
+    } finally {
+      setUpdatingUserId(null)
     }
   }
 
@@ -285,9 +365,8 @@ export function UserManagementView() {
 
       {/* Filters */}
       <Card>
-        <CardContent className="p-4">
-          <div className="flex flex-col sm:flex-row gap-3">
-            <div className="relative flex-1">
+        <CardContent className="space-y-3 p-4">
+          <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Search by name, email, or role..."
@@ -295,9 +374,10 @@ export function UserManagementView() {
                 onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1) }}
                 className="pl-9"
               />
-            </div>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
             <Select value={roleFilter} onValueChange={(v) => { setRoleFilter(v); setCurrentPage(1) }}>
-              <SelectTrigger className="w-full sm:w-48">
+              <SelectTrigger className="w-full">
                 <SelectValue placeholder="Filter role" />
               </SelectTrigger>
               <SelectContent>
@@ -309,6 +389,40 @@ export function UserManagementView() {
                 <SelectItem value="PLACEMENT_CELL">Placement Cell</SelectItem>
               </SelectContent>
             </Select>
+            {isMainAdmin && (
+              <>
+                <Select value={departmentFilter} onValueChange={(value) => { setDepartmentFilter(value); setCurrentPage(1) }}>
+                  <SelectTrigger className="w-full"><SelectValue placeholder="All Departments" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">All Departments</SelectItem>
+                    {DEPARTMENTS.map((department) => <SelectItem key={department} value={department}>{department}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={startYearFilter} onValueChange={(value) => { setStartYearFilter(value); setCurrentPage(1) }}>
+                  <SelectTrigger className="w-full"><SelectValue placeholder="All Intake Years" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">All Intake Years</SelectItem>
+                    {startYears.map((year) => <SelectItem key={year} value={String(year)}>{year}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={batchFilter} onValueChange={(value) => { setBatchFilter(value); setCurrentPage(1) }}>
+                  <SelectTrigger className="w-full"><SelectValue placeholder="All Graduation Years" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">All Graduation Years</SelectItem>
+                    {graduationYears.map((year) => <SelectItem key={year} value={String(year)}>{year}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </>
+            )}
+            {isAdmin && (
+              <Select value={classFilter} onValueChange={(value) => { setClassFilter(value); setCurrentPage(1) }}>
+                <SelectTrigger className="w-full"><SelectValue placeholder="All study years" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All study years</SelectItem>
+                  {availableClasses.map((studyYear) => <SelectItem key={studyYear} value={studyYear}>{studyYear}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -324,7 +438,7 @@ export function UserManagementView() {
                   <TableHead className="hidden md:table-cell">Email</TableHead>
                   <TableHead>Role</TableHead>
                   <TableHead className="hidden lg:table-cell">Department</TableHead>
-                  <TableHead>Verified</TableHead>
+                  <TableHead>Verification Status</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -364,17 +478,43 @@ export function UserManagementView() {
                         {user.department || '—'}
                       </TableCell>
                       <TableCell>
-                        <button
-                          onClick={() => handleToggleVerified(user.id, user.isVerified)}
-                          className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full transition-colors cursor-pointer ${
-                            user.isVerified
-                              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-                              : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'
-                          }`}
-                        >
-                          {user.isVerified ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
-                          {user.isVerified ? 'Verified' : 'Unverified'}
-                        </button>
+                        {(user.role === 'STUDENT' || user.role === 'ALUMNI') ? (
+                          <div className="flex items-center gap-1">
+                            <Badge variant="outline" className={
+                              (user.verificationStatus || (user.isVerified ? 'APPROVED' : 'PENDING')) === 'APPROVED'
+                                ? 'border-emerald-500 text-emerald-700'
+                                : (user.verificationStatus || 'PENDING') === 'REJECTED'
+                                  ? 'border-red-500 text-red-700'
+                                  : 'border-amber-500 text-amber-700'
+                            }>
+                              {(user.verificationStatus || (user.isVerified ? 'APPROVED' : 'PENDING')) === 'APPROVED'
+                                ? 'Approved'
+                                : user.verificationStatus === 'REJECTED'
+                                  ? 'Rejected'
+                                  : 'Pending'}
+                            </Badge>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              disabled={updatingUserId === user.id || user.isVerified}
+                              className="h-7 px-2 text-xs text-emerald-700"
+                              onClick={() => handleSetVerified(user.id, true)}
+                            >
+                              <CheckCircle2 className="w-3 h-3 mr-1" /> Approve
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              disabled={updatingUserId === user.id || user.verificationStatus === 'REJECTED'}
+                              className="h-7 px-2 text-xs text-red-600"
+                              onClick={() => handleSetVerified(user.id, false)}
+                            >
+                              <XCircle className="w-3 h-3 mr-1" /> Reject
+                            </Button>
+                          </div>
+                        ) : (
+                          <Badge variant="outline">Verified</Badge>
+                        )}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
@@ -387,6 +527,55 @@ export function UserManagementView() {
                           >
                             <Eye className="w-4 h-4" />
                           </Button>
+                          {user.role === 'STUDENT' && user.isVerified && (
+                            <Dialog open={promotionTarget === user.id} onOpenChange={(open) => {
+                              if (open) {
+                                setPromotionTarget(user.id)
+                                setPassoutYear(String(getGraduationYear(user.batch, user.graduationYear) ?? new Date().getFullYear()))
+                              } else {
+                                setPromotionTarget(null)
+                              }
+                            }}>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-emerald-700"
+                                title="Promote to Alumni"
+                                disabled={updatingUserId === user.id}
+                                onClick={() => setPromotionTarget(user.id)}
+                              >
+                                <GraduationCap className="w-4 h-4" />
+                              </Button>
+                              <DialogContent>
+                                <DialogHeader>
+                                  <DialogTitle>Promote Student to Alumni</DialogTitle>
+                                  <DialogDescription>
+                                    Confirm {user.name}&apos;s actual graduation year. Their original intake year will be preserved, including for delayed completion.
+                                  </DialogDescription>
+                                </DialogHeader>
+                                <div className="space-y-2">
+                                  <Label htmlFor={`passout-year-${user.id}`}>Actual graduation year</Label>
+                                  <Input
+                                    id={`passout-year-${user.id}`}
+                                    type="number"
+                                    min={getStartYear(user.batch) ?? 1992}
+                                    max={new Date().getFullYear() + 10}
+                                    value={passoutYear}
+                                    onChange={(event) => setPassoutYear(event.target.value)}
+                                  />
+                                  <p className="text-sm text-muted-foreground">
+                                    Intake year {getStartYear(user.batch) ?? 'not recorded'} will be preserved; graduation year will be {passoutYear}.
+                                  </p>
+                                </div>
+                                <DialogFooter>
+                                  <Button variant="outline" onClick={() => setPromotionTarget(null)}>Cancel</Button>
+                                  <Button onClick={handlePromoteToAlumni} disabled={updatingUserId === user.id}>
+                                    Promote to Alumni
+                                  </Button>
+                                </DialogFooter>
+                              </DialogContent>
+                            </Dialog>
+                          )}
                           <AlertDialog open={deleteTarget === user.id} onOpenChange={(open) => !open && setDeleteTarget(null)}>
                             <AlertDialogTrigger asChild>
                               <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:text-red-600" title="Delete User">
@@ -485,6 +674,10 @@ interface MetricCardData {
 }
 
 export function AnalyticsView() {
+  const currentUser = useAppStore((s) => s.currentUser)
+  const isDepartmentAdmin = currentUser?.role === 'ADMIN' &&
+    !!currentUser.department &&
+    currentUser.department !== 'Administration'
   const analytics = useAppStore((s) => s.analytics)
   const users = useAppStore((s) => s.users)
   const jobs = useAppStore((s) => s.jobs)
@@ -495,34 +688,107 @@ export function AnalyticsView() {
   const addToast = useAppStore((s) => s.addToast)
 
   const [loading, setLoading] = useState(analytics.length === 0)
+  const [departmentFilter, setDepartmentFilter] = useState('')
+  const [startYearFilter, setStartYearFilter] = useState('')
+  const [batchFilter, setBatchFilter] = useState('')
+  const [departmentStudentDistribution, setDepartmentStudentDistribution] = useState<AnalyticsChartItem[]>([])
+  const startYears = getStartYearOptions(users)
+  const graduationYears = getGraduationYearOptions(users)
+
+  const loadAnalytics = async (department = departmentFilter, startYear = startYearFilter, graduationYear = batchFilter) => {
+    setLoading(true)
+    try {
+      const params = new URLSearchParams()
+      if (currentUser?.id) params.set('actorId', currentUser.id)
+      if (department) params.set('department', department)
+      if (startYear) params.set('startYear', startYear)
+      if (graduationYear) params.set('graduationYear', graduationYear)
+      const query = params.size > 0 ? `?${params.toString()}` : ''
+      const response = await fetch(`/api/analytics${query}`)
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Unable to load analytics')
+      setAnalytics(Array.isArray(data) ? data : [])
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : 'Unable to load analytics', 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   useEffect(() => {
     if (analytics.length === 0) {
-      fetch('/api/analytics')
-        .then((r) => r.json())
-        .then((data) => {
-          setAnalytics(Array.isArray(data) ? data : [])
-        })
-        .catch(() => {})
-        .finally(() => setLoading(false))
+      const timer = window.setTimeout(() => { void loadAnalytics() }, 0)
+      return () => window.clearTimeout(timer)
     }
   }, [])
+
+  useEffect(() => {
+    if (!isDepartmentAdmin || !currentUser?.id) return
+    let cancelled = false
+
+    const loadDepartmentStudentDistribution = async () => {
+      try {
+        const params = new URLSearchParams({
+          actorId: currentUser.id,
+          departmentDistribution: 'true',
+        })
+        if (startYearFilter) params.set('startYear', startYearFilter)
+        if (batchFilter) params.set('graduationYear', batchFilter)
+        const response = await fetch(`/api/analytics?${params.toString()}`)
+        const data = await response.json()
+        if (!response.ok) throw new Error(data.error || 'Unable to load department student distribution')
+        if (!Array.isArray(data)) throw new Error('Invalid department student distribution response')
+
+        const distribution = data.map((item: unknown) => {
+          if (!item || typeof item !== 'object') {
+            throw new Error('Invalid department student distribution item')
+          }
+          const department = Reflect.get(item, 'department')
+          const value = Reflect.get(item, 'value')
+          if (typeof department !== 'string' || typeof value !== 'number') {
+            throw new Error('Invalid department student distribution item')
+          }
+          return {
+            label: getDepartmentChartLabel(department),
+            value,
+            highlighted: normalizeDepartment(department) === normalizeDepartment(currentUser.department),
+          }
+        }).sort((a: AnalyticsChartItem, b: AnalyticsChartItem) => b.value - a.value)
+
+        if (!cancelled) setDepartmentStudentDistribution(distribution)
+      } catch (error) {
+        if (!cancelled) {
+          addToast(error instanceof Error ? error.message : 'Unable to load department student distribution', 'error')
+        }
+      }
+    }
+
+    void loadDepartmentStudentDistribution()
+    return () => { cancelled = true }
+  }, [currentUser?.id, currentUser?.department, isDepartmentAdmin, startYearFilter, batchFilter, addToast])
 
   const getMetric = (key: string): number => {
     const item = analytics.find((a) => a.metric === key)
     return item?.value ?? 0
   }
 
-  const totalUsers = getMetric('total_users') || users.length
-  const totalJobs = getMetric('total_jobs') || jobs.length
-  const openPositions = getMetric('open_jobs') || jobs.filter((j) => j.status === 'OPEN').length
-  const totalApps = getMetric('total_applications') || applications.length
-  const pendingApps = getMetric('pending_applications') || applications.filter((a) => a.status === 'PENDING').length
-  const acceptedApps = getMetric('accepted_applications') || applications.filter((a) => a.status === 'ACCEPTED').length
-  const activeMentorships = getMetric('active_mentorships') || mentorships.filter((m) => m.status === 'ACCEPTED').length
-  const totalEvents = getMetric('total_events') || events.length
-  const verifiedUsers = getMetric('verified_users') || users.filter((u) => u.isVerified).length
-  const placementRate = totalUsers > 0 ? Math.round((acceptedApps / totalUsers) * 100) : 0
+  const getMetricOrFallback = (key: string, fallback: number): number =>
+    analytics.find((item) => item.metric === key)?.value ?? fallback
+  const totalUsers = getMetricOrFallback('total_users', users.length)
+  const totalStudents = getMetricOrFallback('total_students', users.filter((user) => user.role === 'STUDENT').length)
+  const totalJobs = getMetricOrFallback('total_jobs', jobs.length)
+  const openPositions = getMetricOrFallback('open_jobs', jobs.filter((j) => j.status === 'OPEN').length)
+  const totalApps = getMetricOrFallback('total_applications', applications.length)
+  const pendingApps = getMetricOrFallback('pending_applications', applications.filter((a) => a.status === 'PENDING').length)
+  const acceptedApps = getMetricOrFallback('accepted_applications', applications.filter((a) => a.status === 'ACCEPTED').length)
+  const activeMentorships = getMetricOrFallback('active_mentorships', mentorships.filter((m) => m.status === 'ACCEPTED').length)
+  const totalEvents = getMetricOrFallback('total_events', events.length)
+  const verifiedUsers = getMetricOrFallback('verified_users', users.filter((u) => u.isVerified).length)
+  const selectedStudents = getMetric('selected_students')
+  const placedStudents = getMetric('placed_students')
+  const onCampusPlacements = getMetric('on_campus_placements')
+  const offCampusPlacements = getMetric('off_campus_placements')
+  const placementRate = totalStudents > 0 ? Math.round((placedStudents / totalStudents) * 100) : 0
 
   const metrics: MetricCardData[] = [
     { label: 'Total Users', metric: 'total_users', icon: Users, color: 'text-emerald-600', bgColor: 'bg-emerald-100 dark:bg-emerald-900/30' },
@@ -535,6 +801,10 @@ export function AnalyticsView() {
     { label: 'Events', metric: 'total_events', icon: Calendar, color: 'text-orange-600', bgColor: 'bg-orange-100 dark:bg-orange-900/30' },
     { label: 'Verified Users', metric: 'verified_users', icon: Shield, color: 'text-teal-600', bgColor: 'bg-teal-100 dark:bg-teal-900/30' },
     { label: 'Placement Rate', metric: 'placement_rate', icon: BarChart3, color: 'text-indigo-600', bgColor: 'bg-indigo-100 dark:bg-indigo-900/30' },
+    { label: 'Selected Students', metric: 'selected_students', icon: UserCheck, color: 'text-blue-600', bgColor: 'bg-blue-100 dark:bg-blue-900/30' },
+    { label: 'Placed Students', metric: 'placed_students', icon: GraduationCap, color: 'text-emerald-600', bgColor: 'bg-emerald-100 dark:bg-emerald-900/30' },
+    { label: 'On-campus Outcomes', metric: 'on_campus_placements', icon: Building, color: 'text-cyan-600', bgColor: 'bg-cyan-100 dark:bg-cyan-900/30' },
+    { label: 'Off-campus Outcomes', metric: 'off_campus_placements', icon: Briefcase, color: 'text-violet-600', bgColor: 'bg-violet-100 dark:bg-violet-900/30' },
   ]
 
   const metricValues: Record<string, number> = {
@@ -548,13 +818,21 @@ export function AnalyticsView() {
     total_events: totalEvents,
     verified_users: verifiedUsers,
     placement_rate: placementRate,
+    selected_students: selectedStudents,
+    placed_students: placedStudents,
+    on_campus_placements: onCampusPlacements,
+    off_campus_placements: offCampusPlacements,
   }
 
   const maxMetricVal = Math.max(...Object.values(metricValues), 1)
 
   // Department-wise breakdown
   const deptMap: Record<string, { total: number; roles: Record<string, number> }> = {}
-  const allUsers = users.length > 0 ? users : []
+  const allUsers = users.filter((user) =>
+    (!departmentFilter || normalizeDepartment(user.department) === normalizeDepartment(departmentFilter)) &&
+    (!startYearFilter || matchesStartYear(user, Number(startYearFilter))) &&
+    (!batchFilter || matchesGraduationYear(user, Number(batchFilter))),
+  )
   for (const u of allUsers) {
     const dept = u.department || 'Unspecified'
     if (!deptMap[dept]) deptMap[dept] = { total: 0, roles: {} }
@@ -562,6 +840,23 @@ export function AnalyticsView() {
     deptMap[dept].roles[u.role] = (deptMap[dept].roles[u.role] || 0) + 1
   }
   const departments = Object.entries(deptMap).sort((a, b) => b[1].total - a[1].total)
+  const studyYearCounts = new Map<string, number>()
+  const roleCounts = new Map<string, number>()
+  for (const user of allUsers) {
+    const studyYear = getStudyYearLabel(user)
+    if (studyYear) studyYearCounts.set(studyYear, (studyYearCounts.get(studyYear) || 0) + 1)
+    roleCounts.set(user.role, (roleCounts.get(user.role) || 0) + 1)
+  }
+  const studyYearData = STUDY_YEAR_LABELS
+    .filter((label) => studyYearCounts.has(label))
+    .map((label) => ({ label, value: studyYearCounts.get(label) || 0 }))
+  const roleData = Array.from(roleCounts, ([label, value]) => ({ label: label.replace('_', ' '), value }))
+  const departmentStudentChartData = isDepartmentAdmin
+    ? departmentStudentDistribution
+    : departments.map(([department, data]) => ({
+      label: getDepartmentChartLabel(department),
+      value: data.roles.STUDENT || 0,
+    }))
 
   // Monthly trends (from analytics data with month/year)
   const monthlyData = analytics.filter((a) => a.month && a.year)
@@ -614,9 +909,69 @@ export function AnalyticsView() {
           <h2 className="text-2xl font-bold tracking-tight">Analytics</h2>
           <p className="text-muted-foreground text-sm">Platform-wide metrics and insights.</p>
         </div>
-        <Button variant="outline" onClick={handleExportCSV} className="gap-2">
-          <Download className="w-4 h-4" /> Export CSV
-        </Button>
+        <div className="flex flex-nowrap items-center gap-2 overflow-x-auto pb-1">
+          {(currentUser?.role === 'PLACEMENT_CELL' || currentUser?.role === 'ADMIN') && (
+            <>
+              {(currentUser?.role === 'PLACEMENT_CELL' || currentUser?.department === 'Administration') && (
+                <Select value={departmentFilter || 'ALL'} onValueChange={(value) => { const next = value === 'ALL' ? '' : value; setDepartmentFilter(next); void loadAnalytics(next) }}>
+                  <SelectTrigger className="w-56"><SelectValue placeholder="All Departments" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">All Departments</SelectItem>
+                    {DEPARTMENTS.map((department) => <SelectItem key={department} value={department}>{department}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              )}
+              <div className="flex shrink-0 items-center gap-2">
+                <Select value={startYearFilter || 'ALL'} onValueChange={(value) => { const next = value === 'ALL' ? '' : value; setStartYearFilter(next); void loadAnalytics(departmentFilter, next) }}>
+                  <SelectTrigger className="w-44"><SelectValue placeholder="All Intake Years" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">All Intake Years</SelectItem>
+                    {startYears.map((year) => <SelectItem key={year} value={String(year)}>{year}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={batchFilter || 'ALL'} onValueChange={(value) => { const next = value === 'ALL' ? '' : value; setBatchFilter(next); void loadAnalytics(departmentFilter, startYearFilter, next) }}>
+                  <SelectTrigger className="w-48"><SelectValue placeholder="All Graduation Years" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">All Graduation Years</SelectItem>
+                    {graduationYears.map((year) => <SelectItem key={year} value={String(year)}>{year}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button variant="outline" onClick={handleExportCSV} className="shrink-0 gap-2">
+                <Download className="w-4 h-4" /> Export CSV
+              </Button>
+            </>
+          )}
+        </div>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <RoleAnalyticsChart
+          title="Student distribution by department"
+          data={departmentStudentChartData}
+        />
+        <RoleAnalyticsChart
+          title="Student and alumni distribution by class"
+          data={studyYearData}
+          color="#0891b2"
+        />
+        {currentUser?.role === 'ADMIN' && (
+          <RoleAnalyticsChart
+            title="User distribution by role"
+            data={roleData}
+            color="#7c3aed"
+          />
+        )}
+        <RoleAnalyticsChart
+          title="Selected and placed by campus route"
+          data={[
+            { label: 'On campus', value: onCampusPlacements },
+            { label: 'Off campus', value: offCampusPlacements },
+            { label: 'Selected', value: selectedStudents },
+            { label: 'Placed', value: placedStudents },
+          ]}
+          color="#4f46e5"
+        />
       </div>
 
       {/* Metric Cards with Bar Representations */}
@@ -668,13 +1023,14 @@ export function AnalyticsView() {
                     <TableHead className="text-center">Students</TableHead>
                     <TableHead className="text-center hidden sm:table-cell">Alumni</TableHead>
                     <TableHead className="text-center hidden md:table-cell">Recruiters</TableHead>
+                    <TableHead className="text-center hidden lg:table-cell">Admins / Placement</TableHead>
                     <TableHead className="text-right">Total</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {departments.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                         No data available.
                       </TableCell>
                     </TableRow>
@@ -685,6 +1041,7 @@ export function AnalyticsView() {
                         <TableCell className="text-center text-sm">{data.roles['STUDENT'] || 0}</TableCell>
                         <TableCell className="text-center text-sm hidden sm:table-cell">{data.roles['ALUMNI'] || 0}</TableCell>
                         <TableCell className="text-center text-sm hidden md:table-cell">{data.roles['RECRUITER'] || 0}</TableCell>
+                        <TableCell className="text-center text-sm hidden lg:table-cell">{(data.roles['ADMIN'] || 0) + (data.roles['PLACEMENT_CELL'] || 0)}</TableCell>
                         <TableCell className="text-right font-semibold text-sm">{data.total}</TableCell>
                       </TableRow>
                     ))
@@ -750,10 +1107,42 @@ interface PaymentItem {
   type: string
   status: string
   description: string
+  purpose?: string | null
   razorpayId?: string | null
   razorpayOrderId?: string | null
   referenceId?: string | null
   createdAt: string
+}
+
+interface FundraisingSummary {
+  targetAmount: number
+  ideaLabRaised: number
+  totalRaised: number
+  purposeTotals: { purpose: string; label: string; amount: number }[]
+}
+
+interface RazorpayCheckoutOptions {
+  key: string
+  amount: number
+  currency: string
+  name: string
+  description: string
+  order_id: string
+  prefill: { name: string; email: string; contact?: string }
+  theme: { color: string }
+  handler: (response: { razorpay_payment_id: string; razorpay_order_id: string; razorpay_signature: string }) => void
+  modal: { ondismiss: () => void }
+}
+
+interface RazorpayCheckout {
+  open: () => void
+  on: (event: string, handler: (response: { error?: { description?: string } }) => void) => void
+}
+
+declare global {
+  interface Window {
+    Razorpay?: new (options: RazorpayCheckoutOptions) => RazorpayCheckout
+  }
 }
 
 const PAYMENT_STATUS_COLORS: Record<string, string> = {
@@ -771,14 +1160,12 @@ const PAYMENT_TYPE_COLORS: Record<string, string> = {
 
 export function PaymentsView() {
   const currentUser = useAppStore((s) => s.currentUser)
+  const users = useAppStore((s) => s.users)
   const addToast = useAppStore((s) => s.addToast)
 
   const [payments, setPayments] = useState<PaymentItem[]>([])
   const [loading, setLoading] = useState(true)
-  const [payDialogOpen, setPayDialogOpen] = useState(false)
   const [selectedPayment, setSelectedPayment] = useState<PaymentItem | null>(null)
-  const [cardNumber, setCardNumber] = useState('')
-  const [cardName, setCardName] = useState('')
   const [processing, setProcessing] = useState(false)
 
   // Donation state
@@ -788,65 +1175,207 @@ export function PaymentsView() {
   const [donateCustomAmount, setDonateCustomAmount] = useState('')
   const [donateMessage, setDonateMessage] = useState('')
   const [donateProcessing, setDonateProcessing] = useState(false)
+  const [fundraisingSummary, setFundraisingSummary] = useState<FundraisingSummary>({
+    targetAmount: 0,
+    ideaLabRaised: 0,
+    totalRaised: 0,
+    purposeTotals: [],
+  })
+  const [ideaLabTargetInput, setIdeaLabTargetInput] = useState('')
+  const [savingIdeaLabTarget, setSavingIdeaLabTarget] = useState(false)
+  const [departmentFilter, setDepartmentFilter] = useState('')
+  const [batchFilter, setBatchFilter] = useState('')
 
   const isAdmin = currentUser?.role === 'ADMIN'
   const isAlumni = currentUser?.role === 'ALUMNI'
   const isStudent = currentUser?.role === 'STUDENT'
+  const isMainAdmin = currentUser?.role === 'ADMIN' && currentUser.department === 'Administration'
+  const startYears = getStartYearOptions(users)
+  const graduationYears = getGraduationYearOptions(users)
+  const [startYearFilter, setStartYearFilter] = useState('')
+
+  const loadPayments = useCallback(async () => {
+    if (!currentUser) return
+    const params = new URLSearchParams()
+    if (isAdmin) {
+      params.set('actorId', currentUser.id)
+      if (isMainAdmin && departmentFilter) params.set('department', departmentFilter)
+      if (isMainAdmin && startYearFilter) params.set('startYear', startYearFilter)
+      if (isMainAdmin && batchFilter) params.set('graduationYear', batchFilter)
+    } else {
+      params.set('userId', currentUser.id)
+    }
+
+    try {
+      const response = await fetch(`/api/payments?${params.toString()}`)
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Unable to load payments')
+      setPayments(Array.isArray(data) ? data : [])
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : 'Unable to load payments', 'error')
+    } finally {
+      setLoading(false)
+    }
+  }, [addToast, batchFilter, currentUser, departmentFilter, isAdmin, isMainAdmin, startYearFilter])
 
   useEffect(() => {
-    const url = isAdmin ? '/api/payments' : `/api/payments?userId=${currentUser?.id}`
-    fetch(url)
-      .then((r) => r.json())
-      .then((data) => setPayments(Array.isArray(data) ? data : []))
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [currentUser?.id, isAdmin])
+    const timer = window.setTimeout(() => { void loadPayments() }, 0)
+    return () => window.clearTimeout(timer)
+  }, [loadPayments])
+
+  const loadFundraisingSummary = useCallback(async (): Promise<FundraisingSummary> => {
+    const params = new URLSearchParams()
+    if (isMainAdmin && currentUser) {
+      params.set('actorId', currentUser.id)
+      if (departmentFilter) params.set('department', departmentFilter)
+      if (startYearFilter) params.set('startYear', startYearFilter)
+      if (batchFilter) params.set('graduationYear', batchFilter)
+    }
+    const query = params.size > 0 ? `?${params.toString()}` : ''
+    const response = await fetch(`/api/fundraising${query}`)
+    const data = await response.json()
+    if (!response.ok) throw new Error(data.error || 'Unable to load Idea Lab fundraising data')
+    return data
+  }, [batchFilter, currentUser, departmentFilter, isMainAdmin, startYearFilter])
+
+  useEffect(() => {
+    let cancelled = false
+    loadFundraisingSummary().then((data) => {
+      if (cancelled) return
+      setFundraisingSummary(data)
+      setIdeaLabTargetInput(data.targetAmount > 0 ? String(data.targetAmount) : '')
+    }).catch((error) => {
+      if (!cancelled) addToast(error instanceof Error ? error.message : 'Unable to load Idea Lab fundraising data', 'error')
+    })
+    return () => { cancelled = true }
+  }, [loadFundraisingSummary, addToast])
 
   const totalPaid = payments.filter((p) => p.status === 'COMPLETED').reduce((s, p) => s + p.amount, 0)
   const totalPending = payments.filter((p) => p.status === 'PENDING').reduce((s, p) => s + p.amount, 0)
   const donationTotal = payments.filter((p) => p.type === 'DONATION' && p.status === 'COMPLETED').reduce((s, p) => s + p.amount, 0)
 
-  const handlePayNow = (payment: PaymentItem) => {
-    setSelectedPayment(payment)
-    setCardNumber('')
-    setCardName('')
-    setPayDialogOpen(true)
-  }
-
-  const handleProcessPayment = async () => {
-    if (!selectedPayment || !currentUser) return
-    setProcessing(true)
+  const saveIdeaLabTarget = async () => {
+    if (!currentUser) return
+    setSavingIdeaLabTarget(true)
     try {
-      const res = await fetch('/api/payments', {
-        method: 'POST',
+      const response = await fetch('/api/fundraising', {
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: currentUser.id,
-          amount: selectedPayment.amount,
-          currency: selectedPayment.currency,
-          type: selectedPayment.type,
-          description: selectedPayment.description,
-          status: 'COMPLETED',
-          referenceId: selectedPayment.id,
-        }),
+        body: JSON.stringify({ actorId: currentUser.id, targetAmount: Number(ideaLabTargetInput) }),
       })
-      if (res.ok) {
-        setPayments((prev) =>
-          prev.map((p) => (p.id === selectedPayment.id ? { ...p, status: 'COMPLETED' } : p))
-        )
-        addToast('Payment processed successfully!', 'success')
-        setPayDialogOpen(false)
-      }
-    } catch {
-      addToast('Payment failed. Please try again.', 'error')
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Unable to update Idea Lab target')
+      const summary = await loadFundraisingSummary()
+      setFundraisingSummary(summary)
+      setIdeaLabTargetInput(summary.targetAmount > 0 ? String(summary.targetAmount) : '')
+      addToast('Idea Lab fundraising target updated', 'success')
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : 'Unable to update Idea Lab target', 'error')
     } finally {
-      setProcessing(false)
+      setSavingIdeaLabTarget(false)
     }
   }
 
-  const formatCardNumber = (val: string) => {
-    const cleaned = val.replace(/\D/g, '').slice(0, 16)
-    return cleaned.replace(/(\d{4})/g, '$1 ').trim()
+  const handlePayNow = (payment: PaymentItem) => {
+    void startRazorpayCheckout(payment)
+  }
+
+  const startRazorpayCheckout = async (payment: PaymentItem) => {
+    if (!currentUser) return
+    setSelectedPayment(payment)
+    setProcessing(true)
+    try {
+      if (!window.Razorpay) {
+        await new Promise<void>((resolve, reject) => {
+          const script = document.createElement('script')
+          script.src = 'https://checkout.razorpay.com/v1/checkout.js'
+          script.onload = () => resolve()
+          script.onerror = () => reject(new Error('Unable to load Razorpay Checkout'))
+          document.body.appendChild(script)
+        })
+      }
+      const orderResponse = await fetch('/api/payments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          paymentId: payment.id,
+          userId: currentUser.id,
+          amount: payment.amount,
+          currency: payment.currency,
+          type: payment.type,
+          description: payment.description,
+          referenceId: payment.referenceId,
+        }),
+      })
+      if (!orderResponse.ok) throw new Error((await orderResponse.json()).error || 'Unable to create payment order')
+      const order = await orderResponse.json()
+      const Checkout = window.Razorpay
+      if (!Checkout) throw new Error('Razorpay Checkout is unavailable')
+      const checkout = new Checkout({
+        key: order.key,
+        amount: order.amount,
+        currency: order.currency,
+        name: 'AlumniNexus',
+        description: payment.description,
+        order_id: order.orderId,
+        prefill: { name: currentUser.name, email: currentUser.email, contact: currentUser.phone || undefined },
+        theme: { color: '#059669' },
+        handler: async (response) => {
+          const verifyResponse = await fetch('/api/payments', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              paymentId: payment.id,
+              status: 'COMPLETED',
+              razorpayId: response.razorpay_payment_id,
+              razorpayOrderId: response.razorpay_order_id,
+              razorpaySignature: response.razorpay_signature,
+            }),
+          })
+          if (!verifyResponse.ok) {
+            addToast('Payment verification failed. Contact support before retrying.', 'error')
+            return
+          }
+          const updated = await verifyResponse.json()
+          setPayments((prev) => prev.map((item) => item.id === payment.id ? updated : item))
+          if (updated.type === 'DONATION') {
+            void loadFundraisingSummary().catch((error) => {
+              addToast(error instanceof Error ? error.message : 'Unable to refresh fundraising totals', 'error')
+            })
+            addToast(
+              updated.emailSent
+                ? 'Donation verified. Your receipt and appreciation letter were emailed.'
+                : 'Donation verified, but the receipt email could not be sent. Please contact the college admin.',
+              updated.emailSent ? 'success' : 'info'
+            )
+          } else {
+            addToast(
+              updated.emailSent ? 'Payment successful. Confirmation email sent.' : 'Payment successful, but the confirmation email could not be sent.',
+              updated.emailSent ? 'success' : 'info'
+            )
+          }
+        },
+        modal: { ondismiss: () => addToast('Payment window closed. No amount was charged.', 'info') },
+      })
+      checkout.on('payment.failed', async (response) => {
+        await fetch('/api/payments', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ paymentId: payment.id, status: 'FAILED' }),
+        }).catch(() => undefined)
+        addToast(response.error?.description || 'Payment failed. No amount was charged.', 'error')
+      })
+      checkout.open()
+    } catch {
+      await fetch('/api/payments', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paymentId: payment.id, status: 'FAILED' }),
+      }).catch(() => undefined)
+      addToast('Unable to start Razorpay checkout. Please try again.', 'error')
+    } finally {
+      setProcessing(false)
+    }
   }
 
   if (loading) {
@@ -871,6 +1400,41 @@ export function PaymentsView() {
           {isAdmin ? 'View and manage all platform payments.' : 'View your payment history and manage pending payments.'}
         </p>
       </div>
+
+      {isMainAdmin && (
+        <div className="flex flex-wrap items-center gap-3">
+          <Label htmlFor="payments-department-filter">Department</Label>
+          <Select value={departmentFilter || 'ALL'} onValueChange={(value) => setDepartmentFilter(value === 'ALL' ? '' : value)}>
+            <SelectTrigger id="payments-department-filter" className="w-56"><SelectValue placeholder="All Departments" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">All Departments</SelectItem>
+              {DEPARTMENTS.map((department) => <SelectItem key={department} value={department}>{department}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label htmlFor="payments-intake-filter">Intake</Label>
+              <Select value={startYearFilter || 'ALL'} onValueChange={(value) => setStartYearFilter(value === 'ALL' ? '' : value)}>
+                <SelectTrigger id="payments-intake-filter" className="w-full"><SelectValue placeholder="All Intake Years" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All Intake Years</SelectItem>
+                  {startYears.map((year) => <SelectItem key={year} value={String(year)}>{year}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="payments-batch-filter">Batch</Label>
+              <Select value={batchFilter || 'ALL'} onValueChange={(value) => setBatchFilter(value === 'ALL' ? '' : value)}>
+                <SelectTrigger id="payments-batch-filter" className="w-full"><SelectValue placeholder="All Graduation Years" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All Graduation Years</SelectItem>
+                  {graduationYears.map((year) => <SelectItem key={year} value={String(year)}>{year}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -909,6 +1473,69 @@ export function PaymentsView() {
         </Card>
       </div>
 
+      <Card>
+        <CardHeader>
+          <CardTitle>Idea Lab Fundraising</CardTitle>
+          <CardDescription>
+            Alumni contributions are pooled toward the collective target; no percentage is deducted from an individual donation.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="font-medium">
+                {formatCurrency(fundraisingSummary.ideaLabRaised)}
+                {fundraisingSummary.targetAmount > 0 && ` raised of ${formatCurrency(fundraisingSummary.targetAmount)}`}
+              </p>
+              {fundraisingSummary.targetAmount > 0 && (
+                <Badge variant="secondary">
+                  {Math.round(Math.min(100, (fundraisingSummary.ideaLabRaised / fundraisingSummary.targetAmount) * 100))}% funded
+                </Badge>
+              )}
+            </div>
+            {fundraisingSummary.targetAmount > 0 ? (
+              <Progress value={Math.min(100, (fundraisingSummary.ideaLabRaised / fundraisingSummary.targetAmount) * 100)} />
+            ) : (
+              <p className="text-sm text-muted-foreground">The main admin has not set an Idea Lab target yet.</p>
+            )}
+          </div>
+
+          {isMainAdmin && (
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+              <div className="flex-1 space-y-2">
+                <Label htmlFor="idea-lab-target">Set collective fundraising target (INR)</Label>
+                <Input
+                  id="idea-lab-target"
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={ideaLabTargetInput}
+                  onChange={(event) => setIdeaLabTargetInput(event.target.value)}
+                  placeholder="Enter target amount"
+                />
+              </div>
+              <Button onClick={saveIdeaLabTarget} disabled={savingIdeaLabTarget}>
+                {savingIdeaLabTarget ? 'Saving...' : 'Save target'}
+              </Button>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <h3 className="text-sm font-semibold">Completed donations by purpose</h3>
+            {fundraisingSummary.purposeTotals.length > 0 ? (
+              fundraisingSummary.purposeTotals.map((item) => (
+                <div key={item.purpose} className="flex items-center justify-between gap-4 border-b py-2 text-sm last:border-0">
+                  <span>{item.label}</span>
+                  <span className="font-medium">{formatCurrency(item.amount)}</span>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-muted-foreground">No completed donations yet.</p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Donate Now Section - for Alumni & Students */}
       {(isAlumni || isStudent) && (
         <Card className="border-dashed border-2 border-emerald-300 dark:border-emerald-700 bg-gradient-to-br from-emerald-50/50 to-teal-50/50 dark:from-emerald-950/20 dark:to-teal-950/20">
@@ -942,7 +1569,7 @@ export function PaymentsView() {
 
             {/* Quick donate amount chips */}
             <div className="flex flex-wrap gap-2 mt-4">
-              {[{ label: 'Scholarship Fund', amount: '1000', purpose: 'scholarship' }, { label: 'Event Sponsorship', amount: '2500', purpose: 'event' }, { label: 'Infrastructure', amount: '5000', purpose: 'infrastructure' }, { label: 'Student Welfare', amount: '500', purpose: 'welfare' }].map((item) => (
+              {[{ label: 'Scholarship Fund', amount: '1000', purpose: 'scholarship' }, { label: 'Event Sponsorship', amount: '2500', purpose: 'event' }, { label: 'Infrastructure', amount: '5000', purpose: 'infrastructure' }, { label: 'Student Welfare', amount: '500', purpose: 'welfare' }, { label: 'Idea Lab', amount: '1000', purpose: IDEA_LAB_PURPOSE }].map((item) => (
                 <button
                   key={item.purpose}
                   onClick={() => {
@@ -1047,6 +1674,7 @@ export function PaymentsView() {
                   { value: 'infrastructure', label: 'Infrastructure', icon: Building, desc: 'Lab & facility upgrades' },
                   { value: 'welfare', label: 'Student Welfare', icon: Heart, desc: 'General student support' },
                   { value: 'general', label: 'General Fund', icon: DollarSign, desc: 'College development' },
+                  { value: IDEA_LAB_PURPOSE, label: 'Idea Lab', icon: Sparkles, desc: 'Collectively fund the Idea Lab' },
                 ].map((item) => (
                   <button
                     key={item.value}
@@ -1140,7 +1768,7 @@ export function PaymentsView() {
                 }
                 setDonateProcessing(true)
                 try {
-                  // Create donation payment as COMPLETED (simulated)
+                  // Create an initiated order, then continue through the payment dialog.
                   const res = await fetch('/api/payments', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -1149,22 +1777,16 @@ export function PaymentsView() {
                       amount: finalAmount,
                       currency: 'INR',
                       type: 'DONATION',
-                      description: `Donation for ${donatePurpose === 'general' ? 'General Fund' : donatePurpose}${donateMessage ? ': ' + donateMessage : ''}`,
+                      purpose: donatePurpose,
+                      description: `Donation for ${getDonationPurposeLabel(donatePurpose)}${donateMessage ? ': ' + donateMessage : ''}`,
                     }),
                   })
                   if (res.ok) {
                     const newPayment = await res.json()
-                    // Mark as completed immediately (simulated payment)
-                    const completeRes = await fetch('/api/payments', {
-                      method: 'PUT',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ paymentId: newPayment.id, status: 'COMPLETED' }),
-                    })
-                    if (completeRes.ok) {
-                      setPayments((prev) => [newPayment, ...prev])
-                      addToast(`Thank you! Your donation of INR ${finalAmount.toLocaleString('en-IN')} has been received.`, 'success')
-                      setDonateDialogOpen(false)
-                    }
+                    const payment = newPayment.payment || newPayment
+                    setPayments((prev) => [payment, ...prev])
+                    setDonateDialogOpen(false)
+                    void startRazorpayCheckout(payment)
                   } else {
                     addToast('Failed to process donation', 'error')
                   }
@@ -1193,92 +1815,19 @@ export function PaymentsView() {
         </DialogContent>
       </Dialog>
 
-      {/* Simulated Razorpay Payment Dialog */}
-      <Dialog open={payDialogOpen} onOpenChange={setPayDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center">
-                <CreditCard className="w-4 h-4 text-white" />
-              </div>
-              Secure Payment
-            </DialogTitle>
-            <DialogDescription>
-              Complete your payment securely via Razorpay.
-            </DialogDescription>
-          </DialogHeader>
-
-          {selectedPayment && (
-            <div className="space-y-4">
-              <div className="rounded-lg bg-muted p-4 space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Amount</span>
-                  <span className="font-bold text-lg">{formatCurrency(selectedPayment.amount, selectedPayment.currency)}</span>
-                </div>
-                <Separator />
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Description</span>
-                  <span className="text-right max-w-[200px] truncate">{selectedPayment.description}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Type</span>
-                  <span>{selectedPayment.type}</span>
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <div className="space-y-2">
-                  <Label htmlFor="cardName">Name on Card</Label>
-                  <Input
-                    id="cardName"
-                    placeholder="John Doe"
-                    value={cardName}
-                    onChange={(e) => setCardName(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="cardNumber">Card Number</Label>
-                  <Input
-                    id="cardNumber"
-                    placeholder="4111 1111 1111 1111"
-                    value={cardNumber}
-                    onChange={(e) => setCardNumber(formatCardNumber(e.target.value))}
-                    className="font-mono"
-                  />
-                </div>
-              </div>
-
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setPayDialogOpen(false)}>
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handleProcessPayment}
-                  disabled={processing || !cardName.trim()}
-                  className="bg-blue-600 hover:bg-blue-700"
-                >
-                  {processing ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                      Processing...
-                    </>
-                  ) : (
-                    <>
-                      <Shield className="w-4 h-4 mr-2" />
-                      Pay {formatCurrency(selectedPayment.amount, selectedPayment.currency)}
-                    </>
-                  )}
-                </Button>
-              </DialogFooter>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }
 
 // ==================== CERTIFICATES VIEW ====================
+
+function getLocalDateInputValue(): string {
+  const date = new Date()
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
 
 interface CertificateItem {
   id: string
@@ -1293,6 +1842,7 @@ interface CertificateItem {
   expiresAt?: string | null
   isVerified: boolean
   createdAt: string
+  userName?: string
 }
 
 const CERT_TYPE_COLORS: Record<string, string> = {
@@ -1323,39 +1873,91 @@ export function CertificatesView() {
     title: '',
     type: 'COURSE_COMPLETION',
     description: '',
-    issuedBy: 'JJMCOE Alumni Portal',
+    issuedBy: 'JJMCOE AlumniNexus',
+    issuedDate: getLocalDateInputValue(),
+    expiryDate: '',
   })
   const [issuing, setIssuing] = useState(false)
 
   const isAdmin = currentUser?.role === 'ADMIN'
 
   useEffect(() => {
-    const url = isAdmin ? '/api/certificates' : `/api/certificates?userId=${currentUser?.id}`
-    fetch(url)
-      .then((r) => r.json())
-      .then((data) => setCertificates(Array.isArray(data) ? data : []))
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [currentUser?.id, isAdmin])
+    if (!currentUser) return
+
+    let cancelled = false
+    let firstLoad = true
+    const refreshCertificates = async () => {
+      try {
+        const url = isAdmin ? '/api/certificates' : `/api/certificates?userId=${encodeURIComponent(currentUser.id)}`
+        const res = await fetch(url)
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || 'Unable to load certificates')
+        if (!Array.isArray(data)) throw new Error('The certificate response was invalid')
+        if (!cancelled) setCertificates(data)
+      } catch (error) {
+        console.error('Certificate list error:', error)
+        if (firstLoad && !cancelled) {
+          addToast(error instanceof Error ? error.message : 'Unable to load certificates', 'error')
+        }
+      } finally {
+        if (!cancelled) setLoading(false)
+        firstLoad = false
+      }
+    }
+
+    void refreshCertificates()
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void refreshCertificates()
+    }, 15000)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+    }
+  }, [currentUser?.id, isAdmin, addToast])
 
   const handleIssueCertificate = async () => {
-    if (!issueForm.userId || !issueForm.title) return
+    if (!issueForm.userId || !issueForm.title.trim()) {
+      addToast('Select a user and enter a certificate title.', 'error')
+      return
+    }
+    if (!issueForm.issuedDate) {
+      addToast('Select an issue date.', 'error')
+      return
+    }
+    if (issueForm.expiryDate && issueForm.expiryDate < issueForm.issuedDate) {
+      addToast('Expiry date cannot be before the issue date.', 'error')
+      return
+    }
     setIssuing(true)
     try {
       const res = await fetch('/api/certificates', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(issueForm),
+        body: JSON.stringify({
+          ...issueForm,
+          title: issueForm.title.trim(),
+          expiresAt: issueForm.expiryDate || null,
+        }),
       })
-      if (res.ok) {
-        const cert = await res.json()
-        setCertificates((prev) => [cert, ...prev])
-        addToast('Certificate issued successfully!', 'success')
-        setIssueDialogOpen(false)
-        setIssueForm({ userId: '', title: '', type: 'COURSE_COMPLETION', description: '', issuedBy: 'JJMCOE Alumni Portal' })
-      }
-    } catch {
-      addToast('Failed to issue certificate.', 'error')
+      const result = await res.json()
+      if (!res.ok) throw new Error(result.error || 'Failed to issue certificate.')
+      const cert = result as CertificateItem
+      const recipientName = users.find((user) => user.id === cert.userId)?.name
+      setCertificates((prev) => [{ ...cert, userName: recipientName }, ...prev])
+      addToast(`Certificate issued successfully to ${recipientName || 'the selected user'}.`, 'success')
+      setIssueDialogOpen(false)
+      setIssueForm({
+        userId: '',
+        title: '',
+        type: 'COURSE_COMPLETION',
+        description: '',
+        issuedBy: 'JJMCOE AlumniNexus',
+        issuedDate: getLocalDateInputValue(),
+        expiryDate: '',
+      })
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : 'Failed to issue certificate.', 'error')
     } finally {
       setIssuing(false)
     }
@@ -1369,7 +1971,7 @@ export function CertificatesView() {
       const res = await fetch(`/api/certificates?hash=${encodeURIComponent(verifyHash.trim())}`)
       if (res.ok) {
         const data = await res.json()
-        setVerifyResult(data)
+        setVerifyResult(data.isValid && data.certificate ? data.certificate : 'not_found')
       } else {
         setVerifyResult('not_found')
       }
@@ -1381,7 +1983,15 @@ export function CertificatesView() {
   }
 
   const handleDownload = (cert: CertificateItem) => {
-    addToast('Certificate download started', 'success')
+    const certificateHtml = `<!doctype html><html><head><meta charset="utf-8"><title>${cert.title}</title><style>body{font-family:Georgia,serif;background:#f1f5f9;padding:48px}.certificate{max-width:800px;margin:auto;background:white;border:12px solid #0f766e;padding:64px;text-align:center;box-shadow:0 16px 40px #0f172a22}h1{color:#0f766e;font-size:38px}h2{font-size:28px;margin:32px 0 12px}p{color:#475569;line-height:1.6}.hash{font:12px monospace;word-break:break-all;margin-top:32px}</style></head><body><main class="certificate"><p>DR. J. J. MAGDUM COLLEGE OF ENGINEERING, JAYSINGPUR</p><h1>Certificate of Achievement</h1><p>This certifies that</p><h2>${cert.userName || cert.userId}</h2><p>${cert.description}</p><p>Issued on ${formatDate(cert.issuedAt)}</p><p class="hash">Verification hash: ${cert.certificateHash}</p></main></body></html>`
+    const blob = new Blob([certificateHtml], { type: 'text/html' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${(cert.title || 'certificate').replace(/[^a-z0-9]+/gi, '-').toLowerCase() || 'certificate'}.html`
+    link.click()
+    URL.revokeObjectURL(url)
+    addToast('Certificate downloaded. Open it and print to PDF.', 'success')
   }
 
   if (loading) {
@@ -1448,7 +2058,7 @@ export function CertificatesView() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       <Badge variant="secondary" className={CERT_TYPE_COLORS[cert.type] || ''}>
-                        {cert.type.replace(/_/g, ' ')}
+                        {(cert.type || 'CERTIFICATE').replace(/_/g, ' ')}
                       </Badge>
                       {cert.isVerified && (
                         <div className="flex items-center gap-1 text-emerald-600">
@@ -1612,6 +2222,51 @@ export function CertificatesView() {
               </Select>
             </div>
 
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="certIssuedDate">Issue Date</Label>
+                <Input
+                  id="certIssuedDate"
+                  type="date"
+                  value={issueForm.issuedDate}
+                  onChange={(e) => setIssueForm((f) => ({ ...f, issuedDate: e.target.value }))}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="certExpiryMode">Expiry</Label>
+                <Select
+                  value={issueForm.expiryDate ? 'date' : 'never'}
+                  onValueChange={(value) => {
+                    if (value === 'never') {
+                      setIssueForm((f) => ({ ...f, expiryDate: '' }))
+                    } else {
+                      setIssueForm((f) => ({ ...f, expiryDate: f.expiryDate || f.issuedDate }))
+                    }
+                  }}
+                >
+                  <SelectTrigger id="certExpiryMode">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="never">Never</SelectItem>
+                    <SelectItem value="date">Choose expiry date</SelectItem>
+                  </SelectContent>
+                </Select>
+                {issueForm.expiryDate && (
+                  <Input
+                    id="certExpiryDate"
+                    type="date"
+                    aria-label="Expiry date"
+                    min={issueForm.issuedDate}
+                    value={issueForm.expiryDate}
+                    onChange={(e) => setIssueForm((f) => ({ ...f, expiryDate: e.target.value }))}
+                    required
+                  />
+                )}
+              </div>
+            </div>
+
             <div className="space-y-2">
               <Label htmlFor="certDesc">Description</Label>
               <Textarea
@@ -1627,7 +2282,7 @@ export function CertificatesView() {
               <Label htmlFor="certIssuer">Issued By</Label>
               <Input
                 id="certIssuer"
-                placeholder="JJMCOE Alumni Portal"
+                placeholder="JJMCOE AlumniNexus"
                 value={issueForm.issuedBy}
                 onChange={(e) => setIssueForm((f) => ({ ...f, issuedBy: e.target.value }))}
               />
@@ -1693,7 +2348,7 @@ export function CertificatesView() {
                     <div>
                       <p className="text-muted-foreground text-xs">Type</p>
                       <Badge variant="secondary" className={CERT_TYPE_COLORS[verifyResult.type] || ''}>
-                        {verifyResult.type.replace(/_/g, ' ')}
+                        {(verifyResult.type || 'CERTIFICATE').replace(/_/g, ' ')}
                       </Badge>
                     </div>
                     <div>
@@ -1765,7 +2420,8 @@ export function NotificationsView() {
   }, [currentUser?.id, setNotifications])
 
   useEffect(() => {
-    fetchNotifications()
+    const timer = window.setTimeout(() => { void fetchNotifications() }, 0)
+    return () => window.clearTimeout(timer)
   }, [fetchNotifications])
 
   const filteredNotifications =

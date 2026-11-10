@@ -1,7 +1,10 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import { useAppStore, type UserRole } from '@/store/app-store'
+import { useAppStore, type UserGender, type UserRole } from '@/store/app-store'
+import { DEPARTMENTS } from '@/lib/departments'
+import { getGraduationYearOptions, getStartYearOptions } from '@/lib/batches'
+import { ThemeToggle } from '@/components/theme-toggle'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -38,6 +41,8 @@ import {
   CheckCircle2,
   AlertCircle,
   Clock,
+  Eye,
+  EyeOff,
 } from 'lucide-react'
 
 const ROLE_LABELS: Record<UserRole, string> = {
@@ -48,7 +53,7 @@ const ROLE_LABELS: Record<UserRole, string> = {
   PLACEMENT_CELL: 'Placement Cell',
 }
 
-const VALID_DOMAIN = '.jjmcoe.ac.in'
+const VALID_DOMAIN = '@jjmcoe.ac.in'
 
 const FEATURES = [
   { icon: Briefcase, title: 'Jobs & Internships', description: 'Discover curated job opportunities and internships from top companies.', gradient: 'from-emerald-500 to-teal-600' },
@@ -70,6 +75,8 @@ export function LandingPage() {
   const login = useAppStore((s) => s.login)
   const signup = useAppStore((s) => s.signup)
   const isLoading = useAppStore((s) => s.isLoading)
+  const authError = useAppStore((s) => s.authError)
+  const setAuthError = useAppStore((s) => s.setAuthError)
   const addToast = useAppStore((s) => s.addToast)
 
   const [authOpen, setAuthOpen] = useState(false)
@@ -79,15 +86,20 @@ export function LandingPage() {
   // Login
   const [loginEmail, setLoginEmail] = useState('')
   const [loginPassword, setLoginPassword] = useState('')
+  const [showLoginPassword, setShowLoginPassword] = useState(false)
 
   // Register
   const [regName, setRegName] = useState('')
   const [regEmail, setRegEmail] = useState('')
   const [regPassword, setRegPassword] = useState('')
+  const [showRegPassword, setShowRegPassword] = useState(false)
   const [regRole, setRegRole] = useState<UserRole>('STUDENT')
   const [regDepartment, setRegDepartment] = useState('')
+  const [regStartYear, setRegStartYear] = useState('')
+  const [regGraduationYear, setRegGraduationYear] = useState('')
   const [regPhone, setRegPhone] = useState('')
   const [regSkills, setRegSkills] = useState('')
+  const [regGender, setRegGender] = useState<UserGender | ''>('')
 
   // OTP Verification
   const [otpDigits, setOtpDigits] = useState(['', '', '', '', '', ''])
@@ -147,12 +159,8 @@ export function LandingPage() {
       addToast('Please fill in all fields', 'error')
       return
     }
+    setAuthError(null)
     const ok = await login(loginEmail, loginPassword)
-    if (!ok) {
-      // Check if needs verification
-      setAuthView('verify-email')
-      setVerifyEmail(loginEmail)
-    }
     if (ok) setAuthOpen(false)
   }
 
@@ -169,20 +177,42 @@ export function LandingPage() {
       addToast('Password must be at least 6 characters', 'error')
       return
     }
+    if (needsCollegeEmail(regRole)) {
+      const startYear = Number(regStartYear)
+      const graduationYear = Number(regGraduationYear)
+      if (!Number.isInteger(startYear) || !Number.isInteger(graduationYear) || startYear < 1992 || graduationYear < startYear) {
+        addToast('Select a valid intake year and a graduation year no earlier than the intake year.', 'error')
+        return
+      }
+    }
 
     // If college email, show OTP verification after registration
     if (needsCollegeEmail(regRole)) {
-      setPendingUser({ name: regName, email: regEmail, password: regPassword, role: regRole })
-      setVerifyEmail(regEmail)
-      setAuthView('verify-email')
       // First create account (backend sends OTP)
       const res = await fetch('/api/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'signup', ...pendingUser ? { name: regName, email: regEmail, password: regPassword, role: regRole, department: regDepartment, phone: regPhone, skills: regSkills } : {} }),
+        body: JSON.stringify({
+          action: 'signup',
+          name: regName,
+          email: regEmail,
+          password: regPassword,
+          role: regRole,
+          department: regDepartment,
+          batch: `${regStartYear}-${regGraduationYear}`,
+          graduationYear: Number(regGraduationYear),
+          phone: regPhone,
+          skills: regSkills,
+          gender: regGender || undefined,
+        }),
       })
       if (res.ok) {
         const data = await res.json()
+        setPendingUser({ name: regName, email: regEmail, password: regPassword, role: regRole })
+        setVerifyEmail(regEmail)
+        setOtpDigits(['', '', '', '', '', ''])
+        setOtpError('')
+        setAuthView('verify-email')
         if (data.demoOTP) {
           addToast(`Demo OTP: ${data.demoOTP}`, 'info')
         }
@@ -197,6 +227,7 @@ export function LandingPage() {
     const ok = await signup({
       name: regName, email: regEmail, password: regPassword, role: regRole,
       department: regDepartment || undefined, phone: regPhone || undefined, skills: regSkills || undefined,
+      gender: regGender || undefined,
     })
     if (ok) setAuthOpen(false)
   }
@@ -244,10 +275,8 @@ export function LandingPage() {
           body: JSON.stringify({ email: verifyEmail, otp }),
         })
         if (res.ok) {
-          addToast('Email verified successfully!', 'success')
           if (pendingUser) {
-            const ok = await login(pendingUser.email, pendingUser.password)
-            if (ok) setAuthOpen(false)
+            setAuthView('verification-success')
           } else {
             setAuthView('verification-success')
           }
@@ -275,7 +304,10 @@ export function LandingPage() {
       })
       if (res.ok) {
         const data = await res.json()
-        addToast(`OTP sent! Demo OTP: ${data.demoOTP}`, 'info')
+        addToast(
+          data.demoOTP ? `Demo OTP: ${data.demoOTP}` : data.message || 'OTP sent to your email.',
+          'info'
+        )
       } else {
         const err = await res.json()
         setOtpError(err.error || 'Failed to send OTP')
@@ -467,9 +499,9 @@ export function LandingPage() {
           <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center mx-auto">
             <CheckCircle2 className="w-8 h-8 text-emerald-600" />
           </div>
-          <h3 className="text-lg font-bold">Email Verified!</h3>
-          <p className="text-sm text-muted-foreground">Your email has been verified. You can now log in.</p>
-          <Button className="w-full bg-emerald-600 hover:bg-emerald-500" onClick={() => { setAuthView('main'); setActiveTab('login') }}>
+          <h3 className="text-lg font-bold">Registration Submitted!</h3>
+          <p className="text-sm text-muted-foreground">Your email is verified. A department admin and the main admin must approve your account before you can log in.</p>
+          <Button className="w-full bg-emerald-600 hover:bg-emerald-500" onClick={() => { setAuthView('main'); setActiveTab('login'); setPendingUser(null) }}>
             Go to Login
           </Button>
         </div>
@@ -491,14 +523,30 @@ export function LandingPage() {
           </div>
           <div className="space-y-2">
             <Label htmlFor="login-password">Password</Label>
-            <Input id="login-password" type="password" placeholder="Enter your password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleLogin()} />
+            <div className="relative">
+              <Input id="login-password" type={showLoginPassword ? 'text' : 'password'} placeholder="Enter your password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleLogin()} className="pr-10" />
+              <button
+                type="button"
+                aria-label={showLoginPassword ? 'Hide password' : 'Show password'}
+                aria-pressed={showLoginPassword}
+                onClick={() => setShowLoginPassword((visible) => !visible)}
+                className="absolute inset-y-0 right-0 flex items-center px-3 text-muted-foreground hover:text-foreground"
+              >
+                {showLoginPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
           </div>
           <div className="flex justify-end">
             <Button variant="link" className="text-emerald-600 p-0 h-auto text-sm" onClick={() => { setForgotEmail(loginEmail); setAuthView('forgot-password') }}>
               Forgot Password?
             </Button>
           </div>
-          <Button className="w-full bg-emerald-600 hover:bg-emerald-500" onClick={handleLogin} disabled={isLoading}>
+            {authError && (
+              <div role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300">
+                {authError}
+              </div>
+            )}
+            <Button className="w-full bg-emerald-600 hover:bg-emerald-500" onClick={handleLogin} disabled={isLoading}>
             {isLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
             Login
           </Button>
@@ -530,6 +578,18 @@ export function LandingPage() {
             <Input id="reg-name" placeholder="John Doe" value={regName} onChange={(e) => setRegName(e.target.value)} />
           </div>
           <div className="space-y-2">
+            <Label htmlFor="reg-gender">Gender (optional)</Label>
+            <Select value={regGender} onValueChange={(value) => setRegGender(value as UserGender)}>
+              <SelectTrigger id="reg-gender"><SelectValue placeholder="Choose an avatar style" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="FEMALE">Female</SelectItem>
+                <SelectItem value="MALE">Male</SelectItem>
+                <SelectItem value="NON_BINARY">Non-binary</SelectItem>
+                <SelectItem value="PREFER_NOT_TO_SAY">Prefer not to say</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
             <Label htmlFor="reg-email">Email *</Label>
             <Input id="reg-email" type="email" placeholder={needsCollegeEmail(regRole) ? `you${VALID_DOMAIN}` : 'you@company.com'} value={regEmail} onChange={(e) => setRegEmail(e.target.value)} />
             {regEmail && needsCollegeEmail(regRole) && !regEmail.toLowerCase().endsWith(VALID_DOMAIN) && (
@@ -541,12 +601,50 @@ export function LandingPage() {
           </div>
           <div className="space-y-2">
             <Label htmlFor="reg-password">Password *</Label>
-            <Input id="reg-password" type="password" placeholder="Min 6 characters" value={regPassword} onChange={(e) => setRegPassword(e.target.value)} />
+            <div className="relative">
+              <Input id="reg-password" type={showRegPassword ? 'text' : 'password'} placeholder="Min 6 characters" value={regPassword} onChange={(e) => setRegPassword(e.target.value)} className="pr-10" />
+              <button
+                type="button"
+                aria-label={showRegPassword ? 'Hide password' : 'Show password'}
+                aria-pressed={showRegPassword}
+                onClick={() => setShowRegPassword((visible) => !visible)}
+                className="absolute inset-y-0 right-0 flex items-center px-3 text-muted-foreground hover:text-foreground"
+              >
+                {showRegPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
           </div>
           <div className="space-y-2">
             <Label htmlFor="reg-department">Department</Label>
-            <Input id="reg-department" placeholder="Information Technology" value={regDepartment} onChange={(e) => setRegDepartment(e.target.value)} />
+            <Select value={regDepartment} onValueChange={setRegDepartment}>
+              <SelectTrigger id="reg-department"><SelectValue placeholder="Select department" /></SelectTrigger>
+              <SelectContent>
+                {DEPARTMENTS.map((department) => <SelectItem key={department} value={department}>{department}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </div>
+          {needsCollegeEmail(regRole) && (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="reg-start-year">Intake year *</Label>
+                <Select value={regStartYear} onValueChange={setRegStartYear}>
+                  <SelectTrigger id="reg-start-year"><SelectValue placeholder="Select intake year" /></SelectTrigger>
+                  <SelectContent>
+                    {getStartYearOptions().map((year) => <SelectItem key={year} value={String(year)}>{year}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="reg-graduation-year">Expected graduation *</Label>
+                <Select value={regGraduationYear} onValueChange={setRegGraduationYear}>
+                  <SelectTrigger id="reg-graduation-year"><SelectValue placeholder="Select year" /></SelectTrigger>
+                  <SelectContent>
+                    {getGraduationYearOptions().map((year) => <SelectItem key={year} value={String(year)}>{year}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
           <div className="space-y-2">
             <Label htmlFor="reg-phone">Phone</Label>
             <Input id="reg-phone" type="tel" placeholder="+91 98765 43210" value={regPhone} onChange={(e) => setRegPhone(e.target.value)} />
@@ -566,8 +664,19 @@ export function LandingPage() {
 
   return (
     <div className="min-h-screen flex flex-col">
+      <div className="fixed top-4 right-4 z-50 rounded-full bg-black/20 backdrop-blur-sm text-white">
+        <ThemeToggle />
+      </div>
       {/* Hero */}
-      <section className="relative flex-1 flex flex-col items-center justify-center bg-gradient-to-br from-emerald-900 via-teal-800 to-cyan-900 px-4 py-20 md:py-28">
+      <section className="relative flex-1 flex flex-col items-center justify-center overflow-hidden bg-gradient-to-br from-emerald-900 via-teal-800 to-cyan-900 px-4 py-20 md:py-28">
+        <iframe
+          className="absolute inset-0 z-0 h-full w-full scale-150 pointer-events-none"
+          src="https://www.youtube.com/embed/c7ytQAkTDJw?autoplay=1&mute=1&controls=0&loop=1&playlist=c7ytQAkTDJw&rel=0&modestbranding=1"
+          title="JJMCOE campus background video"
+          allow="autoplay; encrypted-media"
+          referrerPolicy="strict-origin-when-cross-origin"
+        />
+        <div className="absolute inset-0 z-[1] bg-gradient-to-br from-emerald-950/85 via-teal-900/75 to-cyan-950/85" />
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           <div className="absolute -top-40 -right-40 w-96 h-96 bg-emerald-400/10 rounded-full blur-3xl" />
           <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-cyan-400/10 rounded-full blur-3xl" />
@@ -577,7 +686,7 @@ export function LandingPage() {
             <Sparkles className="w-4 h-4" /> AI-Powered Career Platform
           </div>
           <h1 className="text-5xl md:text-7xl font-bold text-white mb-4 tracking-tight">
-            Alumni<span className="text-emerald-300">Portal</span>
+            Alumni<span className="text-emerald-300">Nexus</span>
           </h1>
           <p className="text-lg md:text-xl text-emerald-100/80 max-w-2xl mx-auto mb-8">Connecting Students, Alumni, Industry, and Opportunities Through AI</p>
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white/5 backdrop-blur-sm border border-white/10 mb-10">
@@ -588,7 +697,7 @@ export function LandingPage() {
             <Button size="lg" className="bg-emerald-500 hover:bg-emerald-400 text-white font-semibold px-8 py-6 shadow-lg shadow-emerald-500/25" onClick={() => { setActiveTab('login'); setAuthView('main'); setAuthOpen(true) }}>
               Get Started <ChevronRight className="w-4 h-4 ml-1" />
             </Button>
-            <Button size="lg" variant="outline" className="border-white/30 text-white hover:bg-white/10 px-8 py-6 backdrop-blur-sm" onClick={() => { setActiveTab('register'); setAuthView('main'); setAuthOpen(true) }}>
+            <Button size="lg" variant="outline" className="border-white/40 bg-white/10 text-white hover:bg-white/20 hover:text-white px-8 py-6 backdrop-blur-sm dark:border-slate-500/70 dark:bg-slate-900/50 dark:text-slate-100 dark:hover:bg-slate-800/80 dark:hover:text-white" onClick={() => { setActiveTab('register'); setAuthView('main'); setAuthOpen(true) }}>
               Create Account
             </Button>
           </div>
@@ -640,8 +749,7 @@ export function LandingPage() {
       {/* Footer */}
       <footer className="bg-foreground text-muted-foreground py-6 px-4">
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2 text-sm">
-          <p>&copy; {new Date().getFullYear()} AlumniPortal &mdash; JJMCOE, Jaysingpur</p>
-          <p>Built with AI</p>
+          <p>&copy; {new Date().getFullYear()} AlumniNexus &mdash; JJMCOE, Jaysingpur</p>
         </div>
       </footer>
 
@@ -654,7 +762,7 @@ export function LandingPage() {
                 {activeTab === 'login' ? 'Welcome Back' : 'Create Account'}
               </DialogTitle>
               <DialogDescription className="text-center">
-                {activeTab === 'login' ? 'Sign in to your AlumniPortal account' : 'Join the AlumniPortal community'}
+                {activeTab === 'login' ? 'Sign in to your AlumniNexus account' : 'Join the AlumniNexus community'}
               </DialogDescription>
             </DialogHeader>
           ) : (

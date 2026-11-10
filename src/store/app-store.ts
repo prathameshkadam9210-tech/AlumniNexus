@@ -2,7 +2,8 @@ import { create } from 'zustand'
 
 // Types
 export type UserRole = 'STUDENT' | 'ALUMNI' | 'RECRUITER' | 'ADMIN' | 'PLACEMENT_CELL'
-export type ViewName = 'landing' | 'dashboard' | 'jobs' | 'job-detail' | 'mentorship' | 'events' | 'profile' | 'analytics' | 'ai-assistant' | 'applications' | 'alumni-directory' | 'resume-builder' | 'post-job' | 'manage-jobs' | 'candidate-search' | 'user-management' | 'notifications' | 'payments' | 'certificates'
+export type UserGender = 'FEMALE' | 'MALE' | 'NON_BINARY' | 'PREFER_NOT_TO_SAY'
+export type ViewName = 'landing' | 'dashboard' | 'jobs' | 'job-detail' | 'mentorship' | 'events' | 'profile' | 'analytics' | 'ai-assistant' | 'applications' | 'alumni-directory' | 'resume-builder' | 'post-job' | 'manage-jobs' | 'candidate-search' | 'user-management' | 'notifications' | 'payments' | 'certificates' | 'opportunities' | 'placements'
 
 export interface User {
   id: string
@@ -10,6 +11,7 @@ export interface User {
   name: string
   role: UserRole
   avatar?: string | null
+  gender?: UserGender | null
   phone?: string | null
   bio?: string | null
   department?: string | null
@@ -23,7 +25,10 @@ export interface User {
   resumeUrl?: string | null
   linkedinUrl?: string | null
   gpa?: number | null
+  finalYearResultUrl?: string | null
+  alumniChoice?: string | null
   isVerified: boolean
+  verificationStatus?: 'PENDING' | 'APPROVED' | 'REJECTED'
   isOnline: boolean
   createdAt: string
 }
@@ -95,6 +100,7 @@ export interface EventItem {
   title: string
   description: string
   date: string
+  registrationDeadline?: string | null
   endTime?: string | null
   time?: string | null
   location?: string | null
@@ -139,6 +145,7 @@ export interface Payment {
   razorpayId?: string | null
   razorpayOrderId?: string | null
   description: string
+  purpose?: string | null
   referenceId?: string | null
   createdAt: string
 }
@@ -194,11 +201,13 @@ interface AppState {
   sidebarOpen: boolean
   searchQuery: string
   isLoading: boolean
+  authError: string | null
   toasts: { id: string; message: string; type: 'success' | 'error' | 'info' }[]
 
   // Actions - Auth
   login: (email: string, password: string) => Promise<boolean>
   signup: (data: Partial<User> & { password: string }) => Promise<boolean>
+  loadDataForUser?: (user: User) => Promise<void>
   logout: () => void
   setCurrentUser: (user: User | null) => void
 
@@ -235,6 +244,7 @@ interface AppState {
   toggleSidebar: () => void
   setSearchQuery: (q: string) => void
   setLoading: (l: boolean) => void
+  setAuthError: (message: string | null) => void
   addToast: (message: string, type?: 'success' | 'error' | 'info') => void
   removeToast: (id: string) => void
 }
@@ -260,6 +270,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   sidebarOpen: false,
   searchQuery: '',
   isLoading: false,
+  authError: null,
   toasts: [],
 
   // Auth Actions
@@ -273,17 +284,34 @@ export const useAppStore = create<AppState>((set, get) => ({
       })
       if (!res.ok) {
         const err = await res.json()
-        get().addToast(err.error || 'Login failed', 'error')
+        const message = err.rejected
+          ? 'Your account verification was rejected. Please contact your department admin.'
+          : err.pendingApproval
+            ? 'You cannot log in until your department admin or main admin verifies your account.'
+          : err.notRegistered
+            ? 'You are not registered. Please register first, then log in.'
+            : err.needsVerification
+              ? 'Please verify your email before logging in.'
+              : err.error || 'Login failed'
+        set({ authError: message })
+        if (err.pendingApproval) {
+          get().addToast(message, 'error')
+        } else if (err.notRegistered) {
+          get().addToast(message, 'error')
+        } else if (err.needsVerification) {
+          get().addToast(message, 'error')
+        } else {
+          get().addToast(message, 'error')
+        }
         return false
       }
       const user = await res.json()
-      set({ currentUser: user, isAuthenticated: true, currentView: 'dashboard' })
-      // Load role-specific data
-      get().loadDataForUser(user)
+      set({ currentUser: user, isAuthenticated: true, currentView: 'dashboard', authError: null })
       get().addToast(`Welcome back, ${user.name}!`, 'success')
       return true
     } catch {
-      get().addToast('Login failed', 'error')
+      set({ authError: 'Unable to reach the server. Please try again.' })
+      get().addToast('Unable to reach the server. Please try again.', 'error')
       return false
     } finally {
       set({ isLoading: false })
@@ -342,7 +370,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   setSelectedUserId: (id) => set({ selectedUserId: id }),
 
   // Data Actions
-  setJobs: (jobs) => set({ jobs }),
+  setJobs: (jobs) => {
+    if (!Array.isArray(jobs)) {
+      console.error('Invalid jobs response: expected an array')
+      return
+    }
+    set({ jobs })
+  },
   addJob: (job) => set((s) => ({ jobs: [job, ...s.jobs] })),
   setApplications: (apps) => set({ applications: apps }),
   addApplication: (app) => set((s) => ({ applications: [app, ...s.applications] })),
@@ -384,6 +418,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
   setSearchQuery: (q) => set({ searchQuery: q }),
   setLoading: (l) => set({ isLoading: l }),
+  setAuthError: (message) => set({ authError: message }),
   addToast: (message, type = 'info') =>
     set((s) => ({
       toasts: [...s.toasts, { id: Date.now().toString(), message, type }],
@@ -399,90 +434,55 @@ declare module 'zustand' {
   }
 }
 
-// Extend the store with loadDataForUser
-const originalStore = useAppStore
-;(useAppStore as unknown as { getState: () => AppState & { loadDataForUser: (user: User) => Promise<void> } }).getState
-
 // We'll add loadDataForUser to the actions directly
-;(() => {
+(() => {
   const loadDataForUser = async (user: User) => {
     const state = useAppStore.getState()
     try {
-      // Load jobs
-      const jobsRes = await fetch('/api/jobs')
-      if (jobsRes.ok) {
-        const jobs = await jobsRes.json()
-        state.setJobs(jobs)
+      const load = async <T,>(url: string, setData: (data: T[]) => void) => {
+        const response = await fetch(url)
+        if (!response.ok) throw new Error(`Request failed for ${url}: ${response.status}`)
+        const data = await response.json()
+        if (!Array.isArray(data)) throw new Error(`Invalid response for ${url}: expected an array`)
+        setData(data)
       }
 
-      // Load events
-      const eventsRes = await fetch('/api/events')
-      if (eventsRes.ok) {
-        const events = await eventsRes.json()
-        state.setEvents(events)
-      }
+      const jobsParams = new URLSearchParams({ actorId: user.id })
+      if (user.role === 'RECRUITER') jobsParams.set('postedById', user.id)
+      const tasks = [
+        load(`/api/jobs?${jobsParams.toString()}`, state.setJobs),
+        load('/api/events', state.setEvents),
+        load(`/api/events?action=notifications&userId=${encodeURIComponent(user.id)}`, state.setNotifications),
+        load(`/api/payments?userId=${encodeURIComponent(user.id)}`, state.setPayments),
+        load(`/api/certificates?userId=${encodeURIComponent(user.id)}`, state.setCertificates),
+        load(`/api/registrations?userId=${encodeURIComponent(user.id)}`, state.setRegistrations),
+      ]
 
-      // Load notifications
-      const notifRes = await fetch(`/api/events?action=notifications&userId=${user.id}`)
-      if (notifRes.ok) {
-        const notifs = await notifRes.json()
-        state.setNotifications(notifs)
-      }
-
-      // Load payments for ALL roles
-      const paymentsRes = await fetch(`/api/payments?userId=${user.id}`)
-      if (paymentsRes.ok) {
-        const payments = await paymentsRes.json()
-        state.setPayments(payments)
-      }
-
-      // Load certificates for ALL roles
-      const certsRes = await fetch(`/api/certificates?userId=${user.id}`)
-      if (certsRes.ok) {
-        const certs = await certsRes.json()
-        state.setCertificates(certs)
-      }
-
-      // Load registrations for ALL roles
-      const regsRes = await fetch(`/api/registrations?userId=${user.id}`)
-      if (regsRes.ok) {
-        const regs = await regsRes.json()
-        state.setRegistrations(regs)
-      }
-
-      // Role-specific data
       if (user.role === 'STUDENT') {
-        const appsRes = await fetch(`/api/applications?userId=${user.id}`)
-        if (appsRes.ok) state.setApplications(await appsRes.json())
-
-        const mentorRes = await fetch(`/api/mentorships?menteeId=${user.id}`)
-        if (mentorRes.ok) state.setMentorships(await mentorRes.json())
+        tasks.push(
+          load(`/api/applications?actorId=${encodeURIComponent(user.id)}`, state.setApplications),
+          load(`/api/mentorships?menteeId=${encodeURIComponent(user.id)}`, state.setMentorships),
+        )
       }
 
       if (user.role === 'ALUMNI') {
-        const mentorRes = await fetch(`/api/mentorships?mentorId=${user.id}`)
-        if (mentorRes.ok) state.setMentorships(await mentorRes.json())
-      }
-
-      if (user.role === 'RECRUITER') {
-        const jobsRes2 = await fetch(`/api/jobs?postedById=${user.id}`)
-        if (jobsRes2.ok) state.setJobs(await jobsRes2.json())
-
-        const appsRes = await fetch(`/api/applications?recruiterId=${user.id}`)
-        if (appsRes.ok) state.setApplications(await appsRes.json())
+        tasks.push(load(`/api/mentorships?mentorId=${encodeURIComponent(user.id)}`, state.setMentorships))
       }
 
       if (user.role === 'ADMIN' || user.role === 'PLACEMENT_CELL') {
-        const usersRes = await fetch('/api/auth?action=users')
-        if (usersRes.ok) state.setUsers(await usersRes.json())
-
-        const analyticsRes = await fetch('/api/analytics')
-        if (analyticsRes.ok) state.setAnalytics(await analyticsRes.json())
-
-        // Load organizations for ADMIN/PLACEMENT_CELL
-        const orgsRes = await fetch('/api/organizations')
-        if (orgsRes.ok) state.setOrganizations(await orgsRes.json())
+        const analyticsParams = new URLSearchParams({ actorId: user.id })
+        if (user.role === 'ADMIN' && user.department && user.department !== 'Administration') {
+          analyticsParams.set('department', user.department)
+        }
+        tasks.push(
+          load(`/api/applications?actorId=${encodeURIComponent(user.id)}`, state.setApplications),
+          load(`/api/auth?action=users&actorId=${encodeURIComponent(user.id)}`, state.setUsers),
+          load(`/api/analytics?${analyticsParams}`, state.setAnalytics),
+          load('/api/organizations', state.setOrganizations),
+        )
       }
+
+      await Promise.all(tasks)
     } catch (e) {
       console.error('Error loading data:', e)
     }

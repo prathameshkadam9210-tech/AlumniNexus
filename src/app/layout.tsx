@@ -7,7 +7,7 @@ const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "AlumniPortal - AI-Powered Digital Alumni & Career Development Portal",
+  title: "AlumniNexus - AI-Powered Digital Alumni & Career Development Portal",
   description: "Connecting Students, Alumni, Industry, and Opportunities Through Artificial Intelligence. Built for Dr. J.J. Magdum College of Engineering.",
   keywords: ["Alumni", "Career Development", "AI", "Placement", "Mentorship", "Jobs"],
 };

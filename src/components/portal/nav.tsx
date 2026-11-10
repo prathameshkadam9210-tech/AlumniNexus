@@ -2,10 +2,11 @@
 
 import { useState, useCallback, useEffect } from 'react'
 import { useAppStore, type ViewName, type UserRole } from '@/store/app-store'
+import { ThemeToggle } from '@/components/theme-toggle'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { UserAvatar } from '@/components/portal/user-avatar'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
@@ -44,6 +45,8 @@ import {
   Building,
   CreditCard,
   Award,
+  Lightbulb,
+  ClipboardCheck,
 } from 'lucide-react'
 import {
   UserManagementView,
@@ -52,6 +55,8 @@ import {
   CertificatesView,
   NotificationsView,
 } from '@/components/portal/admin-views'
+import { OpportunityView } from '@/components/portal/opportunities'
+import { PlacementsView } from '@/components/portal/placements'
 interface NavItem {
   label: string
   view: ViewName
@@ -64,15 +69,17 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Jobs & Internships', view: 'jobs', icon: Briefcase, roles: ['STUDENT', 'ALUMNI', 'RECRUITER', 'ADMIN', 'PLACEMENT_CELL'] },
   { label: 'Events', view: 'events', icon: Calendar, roles: ['STUDENT', 'ALUMNI', 'RECRUITER', 'ADMIN', 'PLACEMENT_CELL'] },
   { label: 'Profile', view: 'profile', icon: User, roles: ['STUDENT', 'ALUMNI', 'RECRUITER', 'ADMIN', 'PLACEMENT_CELL'] },
-  { label: 'My Applications', view: 'applications', icon: FileText, roles: ['STUDENT', 'RECRUITER'] },
+  { label: 'My Applications', view: 'applications', icon: FileText, roles: ['STUDENT'] },
+  { label: 'Manage Applications', view: 'applications', icon: FileText, roles: ['PLACEMENT_CELL'] },
   { label: 'Mentorship', view: 'mentorship', icon: Users, roles: ['STUDENT', 'ALUMNI'] },
+  { label: 'Career Opportunities', view: 'opportunities', icon: Lightbulb, roles: ['ALUMNI', 'RECRUITER', 'PLACEMENT_CELL'] },
+  { label: 'Placement Outcomes', view: 'placements', icon: ClipboardCheck, roles: ['ADMIN', 'PLACEMENT_CELL'] },
   { label: 'Resume Builder', view: 'resume-builder', icon: GraduationCap, roles: ['STUDENT'] },
   { label: 'AI Assistant', view: 'ai-assistant', icon: Brain, roles: ['STUDENT'] },
   { label: 'Alumni Directory', view: 'alumni-directory', icon: Building, roles: ['ALUMNI', 'PLACEMENT_CELL'] },
-  { label: 'Post Job', view: 'post-job', icon: UserPlus, roles: ['ALUMNI', 'RECRUITER'] },
-  { label: 'Manage Jobs', view: 'manage-jobs', icon: Briefcase, roles: ['RECRUITER'] },
-  { label: 'Candidate Search', view: 'candidate-search', icon: Search, roles: ['RECRUITER'] },
-  { label: 'Payments', view: 'payments', icon: CreditCard, roles: ['STUDENT', 'ALUMNI', 'ADMIN', 'PLACEMENT_CELL'] },
+  { label: 'Post Job', view: 'post-job', icon: UserPlus, roles: ['PLACEMENT_CELL'] },
+  { label: 'Manage Jobs', view: 'manage-jobs', icon: Briefcase, roles: ['PLACEMENT_CELL'] },
+  { label: 'Payments', view: 'payments', icon: CreditCard, roles: ['STUDENT', 'ALUMNI', 'ADMIN'] },
   { label: 'Certificates', view: 'certificates', icon: Award, roles: ['STUDENT', 'ALUMNI', 'ADMIN', 'PLACEMENT_CELL'] },
   { label: 'Notifications', view: 'notifications', icon: Bell, roles: ['STUDENT', 'ALUMNI', 'RECRUITER', 'ADMIN', 'PLACEMENT_CELL'] },
   { label: 'User Management', view: 'user-management', icon: Users, roles: ['ADMIN'] },
@@ -99,31 +106,23 @@ const VIEW_LABELS: Record<ViewName, string> = {
   notifications: 'Notifications',
   payments: 'Payments',
   certificates: 'Certificates',
+  opportunities: 'Career Opportunities',
+  placements: 'Placement Outcomes',
 }
 
 // Dynamic view component that loads the real module or shows a loading spinner
-function DynamicView({ name, importFn, view }: { name: string; importFn: () => Promise<{ [key: string]: React.ComponentType }>; view?: string }) {
-  const [ViewComponent, setViewComponent] = useState<React.ComponentType | null>(null)
+type DynamicViewRenderer = (view?: ViewName) => React.ReactNode
+
+function DynamicView({ name, importFn, view }: { name: string; importFn: () => Promise<DynamicViewRenderer>; view?: ViewName }) {
+  const [renderView, setRenderView] = useState<DynamicViewRenderer | null>(null)
   const [loaded, setLoaded] = useState(false)
 
   useEffect(() => {
     importFn()
-      .then((mod) => {
-        // The module may export named exports like JobsView, MentorshipView, etc.
-        // Find the first export that looks like a component
-        const keys = Object.keys(mod)
-        for (const key of keys) {
-          if (typeof mod[key] === 'function') {
-            setViewComponent(() => mod[key])
-            break
-          }
-        }
-      })
-      .catch(() => {
-        // Module not found
-      })
+      .then((renderer) => setRenderView(() => renderer))
+      .catch((error: unknown) => console.error(`Unable to load ${name}:`, error))
       .finally(() => setLoaded(true))
-  }, [importFn])
+  }, [importFn, name])
 
   if (!loaded) {
     return (
@@ -133,7 +132,7 @@ function DynamicView({ name, importFn, view }: { name: string; importFn: () => P
     )
   }
 
-  if (!ViewComponent) {
+  if (!renderView) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <Card className="max-w-md w-full mx-4">
@@ -141,9 +140,9 @@ function DynamicView({ name, importFn, view }: { name: string; importFn: () => P
             <div className="w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
               <GraduationCap className="w-8 h-8 text-emerald-600" />
             </div>
-            <h3 className="text-xl font-semibold">Module Loading</h3>
+            <h3 className="text-xl font-semibold">Unable to load module</h3>
             <p className="text-muted-foreground">
-              The <span className="font-medium text-foreground">{name}</span> module is being prepared.
+              The <span className="font-medium text-foreground">{name}</span> module could not be loaded. Please try again.
             </p>
           </CardContent>
         </Card>
@@ -151,11 +150,7 @@ function DynamicView({ name, importFn, view }: { name: string; importFn: () => P
     )
   }
 
-  // If view prop is provided, pass it to the component (e.g. ProfileView needs view='resume-builder')
-  if (view) {
-    return <ViewComponent view={view} />
-  }
-  return <ViewComponent />
+  return renderView(view)
 }
 
 function ViewRouter() {
@@ -163,17 +158,17 @@ function ViewRouter() {
 
   switch (currentView) {
     case 'dashboard':
-      return <DynamicView name="Dashboard" importFn={() => import('@/components/portal/dashboard')} />
+      return <DynamicView name="Dashboard" importFn={() => import('@/components/portal/dashboard').then(({ DashboardView }) => () => <DashboardView />)} />
     case 'jobs':
-      return <DynamicView name="Jobs & Internships" importFn={() => import('@/components/portal/jobs')} />
+      return <DynamicView name="Jobs & Internships" importFn={() => import('@/components/portal/jobs').then(({ JobsView }) => () => <JobsView />)} />
     case 'mentorship':
-      return <DynamicView name="Mentorship" importFn={() => import('@/components/portal/mentorship')} />
+      return <DynamicView name="Mentorship" importFn={() => import('@/components/portal/mentorship').then(({ MentorshipView }) => () => <MentorshipView />)} />
     case 'profile':
-      return <DynamicView name="Profile" importFn={() => import('@/components/portal/profile')} />
+      return <DynamicView name="Profile" importFn={() => import('@/components/portal/profile').then(({ ProfileView }) => (selectedView) => <ProfileView view={selectedView === 'resume-builder' ? 'resume-builder' : 'profile'} />)} />
     case 'ai-assistant':
-      return <DynamicView name="AI Assistant" importFn={() => import('@/components/portal/ai-assistant')} />
+      return <DynamicView name="AI Assistant" importFn={() => import('@/components/portal/ai-assistant').then(({ AIAssistantView }) => () => <AIAssistantView />)} />
     case 'events':
-      return <DynamicView name="Events" importFn={() => import('@/components/portal/events')} />
+      return <DynamicView name="Events" importFn={() => import('@/components/portal/events').then(({ EventsView }) => (selectedView) => <EventsView view={selectedView === 'notifications' ? 'notifications' : 'events'} />)} />
     case 'user-management':
       return <UserManagementView />
     case 'analytics':
@@ -182,24 +177,28 @@ function ViewRouter() {
       return <PaymentsView />
     case 'certificates':
       return <CertificatesView />
+    case 'opportunities':
+      return <OpportunityView />
+    case 'placements':
+      return <PlacementsView />
     case 'notifications':
       return <NotificationsView />
     case 'job-detail':
-      return <DynamicView name="Job Detail" importFn={() => import('@/components/portal/jobs')} />
+      return <DynamicView name="Job Detail" importFn={() => import('@/components/portal/jobs').then(({ JobsView }) => () => <JobsView />)} />
     case 'applications':
-      return <DynamicView name="Applications" importFn={() => import('@/components/portal/jobs')} />
+      return <DynamicView name="Applications" importFn={() => import('@/components/portal/jobs').then(({ JobsView }) => () => <JobsView />)} />
     case 'post-job':
-      return <DynamicView name="Post Job" importFn={() => import('@/components/portal/jobs')} />
+      return <DynamicView name="Post Job" importFn={() => import('@/components/portal/jobs').then(({ JobsView }) => () => <JobsView />)} />
     case 'manage-jobs':
-      return <DynamicView name="Manage Jobs" importFn={() => import('@/components/portal/jobs')} />
+      return <DynamicView name="Manage Jobs" importFn={() => import('@/components/portal/jobs').then(({ JobsView }) => () => <JobsView />)} />
     case 'candidate-search':
-      return <DynamicView name="Candidate Search" importFn={() => import('@/components/portal/jobs')} />
+      return <DynamicView name="Candidate Search" importFn={() => import('@/components/portal/jobs').then(({ JobsView }) => () => <JobsView />)} />
     case 'alumni-directory':
-      return <DynamicView name="Alumni Directory" importFn={() => import('@/components/portal/mentorship')} />
+      return <DynamicView name="Alumni Directory" importFn={() => import('@/components/portal/mentorship').then(({ MentorshipView }) => () => <MentorshipView />)} />
     case 'resume-builder':
-      return <DynamicView name="Resume Builder" importFn={() => import('@/components/portal/profile')} view="resume-builder" />
+      return <DynamicView name="Resume Builder" importFn={() => import('@/components/portal/profile').then(({ ProfileView }) => (selectedView) => <ProfileView view={selectedView === 'resume-builder' ? 'resume-builder' : 'profile'} />)} view="resume-builder" />
     default:
-      return <DynamicView name={VIEW_LABELS[currentView] || currentView} importFn={() => import('@/components/portal/dashboard')} />
+      return <DynamicView name={VIEW_LABELS[currentView] || currentView} importFn={() => import('@/components/portal/dashboard').then(({ DashboardView }) => () => <DashboardView />)} />
   }
 }
 
@@ -226,7 +225,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           <GraduationCap className="w-5 h-5 text-white" />
         </div>
         <div className="min-w-0">
-          <h2 className="font-bold text-sm text-foreground truncate">AlumniPortal</h2>
+          <h2 className="font-bold text-sm text-foreground truncate">AlumniNexus</h2>
           <p className="text-xs text-muted-foreground truncate">JJMCOE, Jaysingpur</p>
         </div>
       </div>
@@ -263,11 +262,12 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       {/* User Info at bottom */}
       <div className="px-4 py-3">
         <div className="flex items-center gap-3">
-          <Avatar className="h-8 w-8">
-            <AvatarFallback className="bg-emerald-100 text-emerald-700 text-[10px] font-semibold leading-tight text-center">
-              {currentUser.name.split(' ')[0].slice(0, 6)}
-            </AvatarFallback>
-          </Avatar>
+          <UserAvatar
+            name={currentUser.name}
+            avatar={currentUser.avatar}
+            gender={currentUser.gender}
+            className="h-8 w-8"
+          />
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium text-foreground truncate">{currentUser.name}</p>
             <p className="text-xs text-muted-foreground truncate">{currentUser.role}</p>
@@ -328,7 +328,7 @@ export function AppShell() {
             <div className="w-7 h-7 rounded-md bg-emerald-600 flex items-center justify-center">
               <GraduationCap className="w-4 h-4 text-white" />
             </div>
-            <span className="font-bold text-sm">AlumniPortal</span>
+            <span className="font-bold text-sm">AlumniNexus</span>
           </div>
 
           {/* Search Bar */}
@@ -348,6 +348,7 @@ export function AppShell() {
 
           {/* Right side actions */}
           <div className="flex items-center gap-1">
+            <ThemeToggle />
             {/* Notifications */}
             <Tooltip>
               <TooltipTrigger asChild>
@@ -373,11 +374,12 @@ export function AppShell() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="relative h-9 w-9 rounded-full">
-                  <Avatar className="h-8 w-8">
-                    <AvatarFallback className="bg-emerald-100 text-emerald-700 text-[10px] font-semibold leading-tight text-center">
-                      {currentUser.name.split(' ')[0].slice(0, 6)}
-                    </AvatarFallback>
-                  </Avatar>
+                  <UserAvatar
+                    name={currentUser.name}
+                    avatar={currentUser.avatar}
+                    gender={currentUser.gender}
+                    className="h-8 w-8"
+                  />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent className="w-56" align="end" forceMount>

@@ -6,7 +6,7 @@
 
 #### 1. `src/components/portal/landing.tsx`
 - Full-screen hero section with emerald/teal gradient background
-- Portal branding: "AlumniPortal" with tagline and college name
+- Portal branding: "AlumniNexus" with tagline and college name
 - 4 feature cards: Jobs & Internships, Mentorship, AI Career Guidance, Alumni Network
 - Login/Register modal dialog with Tabs component
 - Login form: email, password, role selector (Student/Alumni/Recruiter/Admin/Placement Cell)

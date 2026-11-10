@@ -729,9 +729,9 @@ async function seed() {
       { userId: recruiter1.id, title: 'Job Expiring Soon', message: 'Your job posting "Frontend Developer Intern" expires on September 15.', type: 'REMINDER', isRead: false },
       { userId: alumni1.id, title: 'Mentorship Request', message: 'Aditya Gudimani has requested a mentorship session with you.', type: 'INFO', isRead: true },
       // New PICT notifications
-      { userId: pictStudent1.id, title: 'Welcome to AlumniPortal!', message: 'Welcome Ananya! Your PICT account has been verified. Explore jobs, events, and mentorship opportunities.', type: 'SUCCESS', isRead: false },
+      { userId: pictStudent1.id, title: 'Welcome to AlumniNexus!', message: 'Welcome Ananya! Your PICT account has been verified. Explore jobs, events, and mentorship opportunities.', type: 'SUCCESS', isRead: false },
       { userId: pictStudent1.id, title: 'Mentorship Request Pending', message: 'Your mentorship request to Neha Joshi (Google) is awaiting a response.', type: 'INFO', isRead: false },
-      { userId: pictStudent2.id, title: 'Welcome to AlumniPortal!', message: 'Welcome Rohan! Your PICT account has been verified. Start connecting with alumni and applying for positions.', type: 'SUCCESS', isRead: true },
+      { userId: pictStudent2.id, title: 'Welcome to AlumniNexus!', message: 'Welcome Rohan! Your PICT account has been verified. Start connecting with alumni and applying for positions.', type: 'SUCCESS', isRead: true },
       { userId: pictStudent2.id, title: 'Tech Summit Registration Open', message: 'PICT Tech Summit 2026 tickets are now available. Register early for INR 999!', type: 'INFO', isRead: false },
       { userId: pictAlumni1.id, title: 'Mentorship Request Received', message: 'Ananya Kulkarni has requested a mentorship session with you on breaking into big tech.', type: 'INFO', isRead: false },
       { userId: pictAlumni2.id, title: 'Alumni Profile Verified', message: 'Your PICT alumni profile has been verified. Students can now discover you for mentorship.', type: 'SUCCESS', isRead: true },
@@ -739,94 +739,8 @@ async function seed() {
   })
   console.log(`   ✅ Created ${await db.notification.count()} notifications\n`)
 
-  // ─── 11. Create Payments (8 total) ───
-  console.log('💰 Creating payments...')
-  await db.payment.createMany({
-    data: [
-      {
-        userId: student1.id,
-        amount: 499,
-        currency: 'INR',
-        type: 'EVENT',
-        status: 'COMPLETED',
-        razorpayId: 'pay_RzP1k2m3n4o5p6',
-        razorpayOrderId: 'order_RzO1a2b3c4d5e6',
-        description: 'Registration for Full-Stack Development with Next.js - Premium Workshop',
-        referenceId: event6.id,
-      },
-      {
-        userId: student2.id,
-        amount: 499,
-        currency: 'INR',
-        type: 'EVENT',
-        status: 'COMPLETED',
-        razorpayId: 'pay_RzQ7x8y9z0a1b2',
-        razorpayOrderId: 'order_RzP2f3g4h5i6j7',
-        description: 'Registration for Full-Stack Development with Next.js - Premium Workshop',
-        referenceId: event6.id,
-      },
-      {
-        userId: pictStudent1.id,
-        amount: 999,
-        currency: 'INR',
-        type: 'EVENT',
-        status: 'COMPLETED',
-        razorpayId: 'pay_RzR3c4d5e6f7g8',
-        razorpayOrderId: 'order_RzQ8k9l0m1n2o3',
-        description: 'Registration for PICT Tech Summit 2026: AI & Future of Work',
-        referenceId: event7.id,
-      },
-      {
-        userId: pictStudent2.id,
-        amount: 999,
-        currency: 'INR',
-        type: 'EVENT',
-        status: 'COMPLETED',
-        razorpayId: 'pay_RzS9h0i1j2k3l4',
-        razorpayOrderId: 'order_RzR4p5q6r7s8t9',
-        description: 'Registration for PICT Tech Summit 2026: AI & Future of Work',
-        referenceId: event7.id,
-      },
-      {
-        userId: alumni1.id,
-        amount: 2000,
-        currency: 'INR',
-        type: 'DONATION',
-        status: 'COMPLETED',
-        razorpayId: 'pay_RzT5m6n7o8p9q0',
-        razorpayOrderId: 'order_RzS1u2v3w4x5y6',
-        description: 'Alumni donation towards scholarship fund for underprivileged students',
-      },
-      {
-        userId: alumni3.id,
-        amount: 1500,
-        currency: 'INR',
-        type: 'DONATION',
-        status: 'COMPLETED',
-        razorpayId: 'pay_RzU1a2b3c4d5e6',
-        razorpayOrderId: 'order_RzT7z8a9b0c1d2',
-        description: 'Contribution towards alumni portal development and maintenance',
-      },
-      {
-        userId: student3.id,
-        amount: 999,
-        currency: 'INR',
-        type: 'EVENT',
-        status: 'PENDING',
-        description: 'Registration for PICT Tech Summit 2026: AI & Future of Work',
-        referenceId: event7.id,
-      },
-      {
-        userId: alumni2.id,
-        amount: 2000,
-        currency: 'INR',
-        type: 'DONATION',
-        status: 'PENDING',
-        description: 'Pledged donation for 2026 annual alumni meet',
-      },
-    ],
-  })
-  console.log(`   ✅ Created ${await db.payment.count()} payments\n`)
+  // ─── 11. Payments are created only after verified Razorpay transactions ───
+  console.log('💰 No demo payments seeded; payment records come from verified transactions.\n')
 
   // ─── 12. Create Certificates (6 total with SHA-256 hashes) ───
   console.log('📜 Creating certificates...')

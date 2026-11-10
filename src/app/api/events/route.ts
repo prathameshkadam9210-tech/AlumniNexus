@@ -11,6 +11,13 @@ export async function GET(req: NextRequest) {
     if (action === 'notifications') {
       const where: Record<string, unknown> = {}
       if (userId) where.userId = userId
+      if (userId) {
+        const recipient = await db.user.findUnique({
+          where: { id: userId },
+          select: { role: true },
+        })
+        if (recipient?.role === 'PLACEMENT_CELL') where.type = { not: 'DONATION' }
+      }
       const notifications = await db.notification.findMany({
         where,
         orderBy: { createdAt: 'desc' },
@@ -27,7 +34,7 @@ export async function GET(req: NextRequest) {
 
     const events = await db.event.findMany({
       where,
-      orderBy: { date: 'desc' },
+      orderBy: { date: 'asc' },
       include: {
         organizer: { select: { name: true, designation: true } },
       },
@@ -37,9 +44,29 @@ export async function GET(req: NextRequest) {
       ...e,
       organizerName: e.organizer?.name,
       date: e.date.toISOString(),
+      registrationDeadline: e.registrationDeadline?.toISOString() || null,
       endTime: e.endTime?.toISOString(),
       createdAt: e.createdAt.toISOString(),
-    })))
+    })).sort((a, b) => {
+      const now = Date.now()
+      const getEnd = (event: { date: string; endTime?: string | null; time: string | null }) => {
+        if (event.endTime) return new Date(event.endTime).getTime()
+        const date = new Date(event.date)
+        if (event.time) {
+          const [hours, minutes] = event.time.split(':').map(Number)
+          date.setHours(hours || 0, minutes || 0, 0, 0)
+        } else {
+          date.setHours(23, 59, 59, 999)
+        }
+        return date.getTime()
+      }
+      const aEnd = getEnd(a)
+      const bEnd = getEnd(b)
+      const aPast = aEnd < now
+      const bPast = bEnd < now
+      if (aPast !== bPast) return aPast ? 1 : -1
+      return aPast ? bEnd - aEnd : new Date(a.date).getTime() - new Date(b.date).getTime()
+    }))
   } catch (error) {
     console.error('Events GET error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -66,13 +93,19 @@ export async function POST(req: NextRequest) {
     }
 
     // Create event
-    const { title: eventTitle, description, date, endTime, time, location, type, organizerId, maxAttendees, image, isFeatured } = body
+    const { title: eventTitle, description, date, registrationDeadline, endTime, time, location, type, organizerId, maxAttendees, image, isFeatured } = body
+    const eventDate = new Date(date)
+    const registrationCutoff = registrationDeadline ? new Date(registrationDeadline) : null
+    if (!Number.isFinite(eventDate.getTime()) || (registrationCutoff && !Number.isFinite(registrationCutoff.getTime()))) {
+      return NextResponse.json({ error: 'Enter a valid event date and registration deadline' }, { status: 400 })
+    }
 
     const event = await db.event.create({
       data: {
         title: eventTitle,
         description,
-        date: new Date(date),
+        date: eventDate,
+        registrationDeadline: registrationCutoff,
         endTime: endTime ? new Date(endTime) : null,
         time,
         location,
@@ -84,7 +117,13 @@ export async function POST(req: NextRequest) {
       },
     })
 
-    return NextResponse.json({ ...event, date: event.date.toISOString(), createdAt: event.createdAt.toISOString() })
+    return NextResponse.json({
+      ...event,
+      date: event.date.toISOString(),
+      registrationDeadline: event.registrationDeadline?.toISOString() || null,
+      endTime: event.endTime?.toISOString() || null,
+      createdAt: event.createdAt.toISOString(),
+    })
   } catch (error) {
     console.error('Events POST error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

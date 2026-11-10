@@ -23,6 +23,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Event not found' }, { status: 404 })
     }
 
+    if (event.registrationDeadline && event.registrationDeadline.getTime() <= Date.now()) {
+      return NextResponse.json({ error: 'The registration deadline has passed.' }, { status: 400 })
+    }
+    const eventEnd = event.endTime || new Date(new Date(event.date).setHours(23, 59, 59, 999))
+    if (eventEnd.getTime() < Date.now()) {
+      return NextResponse.json({ error: 'This event has already taken place.' }, { status: 400 })
+    }
+
     // Check if event is full
     if (event.maxAttendees && event.currentAttendees >= event.maxAttendees) {
       return NextResponse.json(

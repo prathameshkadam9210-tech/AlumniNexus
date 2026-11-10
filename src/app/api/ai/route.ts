@@ -13,8 +13,8 @@ export async function POST(req: NextRequest) {
       }
 
       case 'resume-review': {
-        const { skills, experience, education, targetRole } = data
-        const review = generateResumeReview(skills, experience, education, targetRole)
+        const { skills, experience, education, projects, targetRole, certifications, achievements } = data
+        const review = generateResumeReview(skills, experience, education, targetRole, projects, certifications, achievements)
         return NextResponse.json({ review })
       }
 
@@ -54,12 +54,36 @@ export async function POST(req: NextRequest) {
 function generateCareerResponse(message: string): string {
   const lower = message.toLowerCase()
 
+  if ((lower.includes('job') || lower.includes('role') || lower.includes('career')) && (lower.includes('resume') || lower.includes('cv') || lower.includes('interview'))) {
+    return `For this target job, combine your ATS resume and interview preparation:
+
+1. Extract repeated keywords from the job description and use them naturally in your summary, skills, projects, and experience.
+2. Put the most relevant technologies and measurable outcomes near the top of the resume.
+3. Prepare STAR stories for each major requirement and rehearse a concise introduction.
+4. Use plain headings, standard fonts, one-column layout, and no tables or graphics for ATS compatibility.
+5. Build one project that demonstrates the role's most important missing skill.
+
+Share the exact job description for a tailored keyword checklist and role-specific interview questions.`
+  }
+
   if (lower.includes('resume') || lower.includes('cv')) {
     return `Great question about resumes! Here are key tips for a standout resume:\n\n1. **Tailor your resume** to each job description - use keywords from the posting\n2. **Quantify achievements** - "Increased sales by 25%" is stronger than "Improved sales"\n3. **Use ATS-friendly formatting** - avoid tables, graphics, and complex layouts\n4. **Lead with a strong summary** - 2-3 lines highlighting your value proposition\n5. **Include relevant skills** - match the job requirements exactly\n6. **Keep it concise** - 1 page for freshers, 2 pages for experienced professionals\n\nWould you like me to analyze your specific resume?`
   }
 
   if (lower.includes('interview')) {
     return `Interview preparation is crucial! Here's a structured approach:\n\n**Before the Interview:**\n- Research the company thoroughly (mission, products, culture)\n- Practice STAR method for behavioral questions\n- Prepare 3-5 questions to ask the interviewer\n- Review the job description and match your experience\n\n**During the Interview:**\n- Start with a strong 2-minute self-introduction\n- Use STAR (Situation, Task, Action, Result) for behavioral Qs\n- Show enthusiasm and ask clarifying questions\n- Be honest about what you don't know\n\n**Common Questions to Prepare:**\n- "Tell me about yourself"\n- "Why do you want this role?"\n- "Where do you see yourself in 5 years?"\n\nWant role-specific interview questions?`
+  }
+
+  if (lower.includes('job') || lower.includes('role') || lower.includes('career')) {
+    return `For a job-focused plan, start with the target job description and extract its repeated keywords. Then:
+
+1. Match your resume headline and summary to the target role.
+2. Put the most relevant technical skills first.
+3. Rewrite project bullets with action, technology, and measurable result.
+4. Prepare three STAR stories that prove the job's core requirements.
+5. Build one small project that closes your biggest skill gap.
+
+Share the job title or description and I can suggest ATS keywords, resume changes, and interview questions for that exact role.`
   }
 
   if (lower.includes('skill') || lower.includes('learn')) {
@@ -69,23 +93,25 @@ function generateCareerResponse(message: string): string {
   return `I'm your AI Career Assistant! I can help you with:\n\n🎯 **Career Guidance** - Choose the right path based on your interests and skills\n📝 **Resume Building** - ATS-friendly resumes that get noticed\n🔍 **Skill Gap Analysis** - Find what you need to learn for your dream role\n🗺️ **Career Roadmap** - Step-by-step plan to reach your goals\n🎤 **Interview Prep** - Role-specific questions and strategies\n🏢 **Company Matching** - Find companies that fit your profile\n\nWhat would you like help with today? Just describe your question or situation!`
 }
 
-function generateResumeReview(skills: string[], experience: string, education: string, targetRole: string) {
+function generateResumeReview(skills: string[], experience: string, education: string, targetRole: string, projects: unknown[] = [], certifications = '', achievements = '') {
+  const keywordCoverage = targetRole ? Math.min(100, 45 + skills.length * 7 + (projects.length > 0 ? 12 : 0) + (certifications ? 10 : 0)) : 50
   return {
-    score: 72,
+    score: Math.round((keywordCoverage + (achievements ? 8 : 0)) / 2),
     sections: [
       { name: 'Contact Information', score: 100, feedback: 'Complete and professional' },
       { name: 'Summary/Objective', score: 65, feedback: 'Could be more targeted towards ' + targetRole + '. Include key achievements and value proposition.' },
       { name: 'Skills Section', score: 70, feedback: `${skills.length} skills listed. Consider adding more ${targetRole}-specific skills and certifications.` },
       { name: 'Experience', score: 75, feedback: 'Good experience description. Add more quantifiable achievements and metrics.' },
       { name: 'Education', score: 80, feedback: `${education} is relevant. Consider adding relevant coursework or projects.` },
-      { name: 'Projects', score: 60, feedback: 'Add 2-3 impactful projects with descriptions of your role and technologies used.' },
+      { name: 'Projects', score: projects.length > 0 ? 82 : 60, feedback: projects.length > 0 ? 'Projects are present. Align each project bullet with the target role keywords.' : 'Add 2-3 impactful projects with descriptions of your role and technologies used.' },
+      { name: 'Certifications and Achievements', score: certifications || achievements ? 85 : 45, feedback: certifications || achievements ? 'Good evidence of credibility. Keep only role-relevant items.' : 'Add role-relevant certifications, awards, leadership, or measurable achievements.' },
     ],
     suggestions: [
       `Add a professional summary tailored for ${targetRole} roles`,
       'Include metrics and quantifiable achievements in experience descriptions',
       'Add relevant certifications (AWS, Azure, Google Cloud, etc.)',
       'Include a projects section showcasing practical applications',
-      'Optimize for ATS by matching keywords from job descriptions',
+      `Optimize for ATS by matching keywords from ${targetRole} job descriptions`,
     ],
     atsCompatibility: 78,
   }

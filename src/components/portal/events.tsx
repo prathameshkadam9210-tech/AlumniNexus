@@ -57,6 +57,17 @@ function formatDate(dateStr: string): string {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
+function getEventBounds(event: Pick<EventItem, 'date' | 'endTime' | 'time'>) {
+  const start = new Date(event.date)
+  if (event.time) {
+    const [hours, minutes] = event.time.split(':').map(Number)
+    start.setHours(hours || 0, minutes || 0, 0, 0)
+  }
+  const end = event.endTime ? new Date(event.endTime) : new Date(start)
+  if (!event.endTime) end.setHours(23, 59, 59, 999)
+  return { start, end }
+}
+
 function getTimeAgo(dateStr: string): string {
   const now = Date.now()
   const then = new Date(dateStr).getTime()
@@ -122,6 +133,9 @@ function EventCard({ event, onRegister, canRegister }: { event: EventItem; onReg
   const typeColor = getEventTypeColor(event.type)
   const capacityPercent = event.maxAttendees ? Math.min((event.currentAttendees / event.maxAttendees) * 100, 100) : 0
   const isFull = event.maxAttendees ? event.currentAttendees >= event.maxAttendees : false
+  const { end } = getEventBounds(event)
+  const isPast = end.getTime() < Date.now()
+  const registrationClosed = isPast || Boolean(event.registrationDeadline && new Date(event.registrationDeadline).getTime() <= Date.now())
 
   return (
     <Card className="group overflow-hidden hover:shadow-md transition-shadow">
@@ -144,6 +158,7 @@ function EventCard({ event, onRegister, canRegister }: { event: EventItem; onReg
             {event.type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
           </Badge>
         </div>
+        {isPast && <Badge variant="secondary" className="mb-2">Past event</Badge>}
 
         <p className="text-sm text-muted-foreground line-clamp-2 mb-3">{event.description}</p>
 
@@ -152,6 +167,11 @@ function EventCard({ event, onRegister, canRegister }: { event: EventItem; onReg
             <Calendar className="h-3.5 w-3.5 flex-shrink-0" />
             <span>{formatDate(event.date)}</span>
           </div>
+          {event.registrationDeadline && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              Registration closes {formatDate(event.registrationDeadline)}
+            </p>
+          )}
           {event.time && (
             <div className="flex items-center gap-2">
               <Clock className="h-3.5 w-3.5 flex-shrink-0" />
@@ -186,10 +206,14 @@ function EventCard({ event, onRegister, canRegister }: { event: EventItem; onReg
             <Button
               size="sm"
               className="w-full"
-              disabled={isFull}
+              disabled={isFull || registrationClosed}
               onClick={() => onRegister(event.id)}
             >
-              {isFull ? (
+              {isPast ? (
+                <>Event completed</>
+              ) : registrationClosed ? (
+                <>Registration closed</>
+              ) : isFull ? (
                 <><Users className="h-4 w-4 mr-1" /> Event Full</>
               ) : (
                 <><Plus className="h-4 w-4 mr-1" /> Register</>
@@ -230,13 +254,14 @@ function FeaturedEvents({ events, onRegister, canRegister }: { events: EventItem
 // ============================================================
 
 function CreateEventDialog({ open, onOpenChange, onCreated }: { open: boolean; onOpenChange: (open: boolean) => void; onCreated: (event: EventItem) => void }) {
-  const { addToast, setLoading } = useAppStore()
+  const { currentUser, addToast, setLoading } = useAppStore()
   const [creating, setCreating] = useState(false)
   const [form, setForm] = useState({
     title: '',
     description: '',
     date: '',
     time: '',
+    registrationDeadline: '',
     location: '',
     type: 'WORKSHOP',
     maxAttendees: '',
@@ -257,6 +282,8 @@ function CreateEventDialog({ open, onOpenChange, onCreated }: { open: boolean; o
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...form,
+          organizerId: currentUser?.id,
+          registrationDeadline: form.registrationDeadline ? new Date(form.registrationDeadline).toISOString() : null,
           maxAttendees: form.maxAttendees ? parseInt(form.maxAttendees) : null,
         }),
       })
@@ -264,7 +291,7 @@ function CreateEventDialog({ open, onOpenChange, onCreated }: { open: boolean; o
       const event = await res.json()
       onCreated(event)
       onOpenChange(false)
-      setForm({ title: '', description: '', date: '', time: '', location: '', type: 'WORKSHOP', maxAttendees: '', isFeatured: false })
+      setForm({ title: '', description: '', date: '', registrationDeadline: '', time: '', location: '', type: 'WORKSHOP', maxAttendees: '', isFeatured: false })
       addToast('Event created successfully', 'success')
     } catch {
       addToast('Failed to create event', 'error')
@@ -309,6 +336,15 @@ function CreateEventDialog({ open, onOpenChange, onCreated }: { open: boolean; o
                 type="date"
                 value={form.date}
                 onChange={e => setForm(p => ({ ...p, date: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="registration-deadline">Registration closes (optional)</Label>
+              <Input
+                id="registration-deadline"
+                type="datetime-local"
+                value={form.registrationDeadline}
+                onChange={(event) => setForm((previous) => ({ ...previous, registrationDeadline: event.target.value }))}
               />
             </div>
             <div className="space-y-2">
@@ -380,35 +416,155 @@ function CreateEventDialog({ open, onOpenChange, onCreated }: { open: boolean; o
 function EventsViewContent() {
   const { events, currentUser, addEvent, addToast, setLoading } = useAppStore()
   const [filter, setFilter] = useState('all')
+  const [dateFilter, setDateFilter] = useState('all')
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [registering, setRegistering] = useState<string | null>(null)
 
   const isAdminOrPlacement = currentUser?.role === 'ADMIN' || currentUser?.role === 'PLACEMENT_CELL'
   const isStudent = currentUser?.role === 'STUDENT'
 
-  const featuredEvents = useMemo(() => events.filter(e => e.isFeatured), [events])
+  const featuredEvents = useMemo(() => events.filter((event) => {
+    if (!event.isFeatured) return false
+    const { start, end } = getEventBounds(event)
+    const now = Date.now()
+    if (dateFilter === 'past') return end.getTime() < now
+    if (dateFilter === 'current') return start.getTime() <= now && end.getTime() >= now
+    if (dateFilter === 'upcoming') return start.getTime() > now
+    return true
+  }), [events, dateFilter])
   const filteredEvents = useMemo(() => {
     let filtered = events.filter(e => !e.isFeatured)
     if (filter !== 'all') {
       filtered = events.filter(e => e.type.toLowerCase() === filter.toLowerCase())
     }
-    return filtered.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-  }, [events, filter])
+    if (dateFilter !== 'all') {
+      filtered = filtered.filter((event) => {
+        const { start, end } = getEventBounds(event)
+        const now = Date.now()
+        if (dateFilter === 'past') return end.getTime() < now
+        if (dateFilter === 'current') return start.getTime() <= now && end.getTime() >= now
+        return start.getTime() > now
+      })
+    }
+    const statusRank = (event: EventItem) => getEventBounds(event).end.getTime() < Date.now() ? 1 : 0
+    return filtered.sort((a, b) => {
+      const rankDifference = statusRank(a) - statusRank(b)
+      if (rankDifference !== 0) return rankDifference
+      const dateDifference = new Date(a.date).getTime() - new Date(b.date).getTime()
+      return statusRank(a) ? -dateDifference : dateDifference
+    })
+  }, [events, filter, dateFilter])
 
   const handleRegister = async (eventId: string) => {
     setRegistering(eventId)
     try {
+      if (!currentUser) return
       const event = events.find(e => e.id === eventId)
       if (!event) return
       if (event.maxAttendees && event.currentAttendees >= event.maxAttendees) {
         addToast('Event is full', 'error')
         return
       }
-      // Optimistic update
-      addEvent({ ...event, currentAttendees: event.currentAttendees + 1 })
+      if (event.registrationDeadline && new Date(event.registrationDeadline).getTime() <= Date.now()) {
+        addToast('Registration for this event is closed.', 'error')
+        return
+      }
+      const response = await fetch('/api/registrations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUser?.id, eventId }),
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Failed to register for event')
+      if (result.requiresPayment) {
+        if (!window.Razorpay) {
+          await new Promise<void>((resolve, reject) => {
+            const script = document.createElement('script')
+            script.src = 'https://checkout.razorpay.com/v1/checkout.js'
+            script.onload = () => resolve()
+            script.onerror = () => reject(new Error('Unable to load Razorpay Checkout'))
+            document.body.appendChild(script)
+          })
+        }
+        const orderResponse = await fetch('/api/payments', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: currentUser.id,
+            amount: result.amount,
+            currency: result.currency,
+            type: 'EVENT',
+            description: `Event registration: ${event.title}`,
+            referenceId: event.id,
+          }),
+        })
+        const order = await orderResponse.json()
+        if (!orderResponse.ok) throw new Error(order.error || 'Unable to create event payment')
+        const Checkout = window.Razorpay
+        if (!Checkout) throw new Error('Razorpay Checkout is unavailable')
+        const checkout = new Checkout({
+          key: order.key,
+          amount: order.amount,
+          currency: order.currency,
+          name: 'AlumniNexus',
+          description: `Event registration: ${event.title}`,
+          order_id: order.orderId,
+          prefill: { name: currentUser.name, email: currentUser.email, contact: currentUser.phone || undefined },
+          theme: { color: '#059669' },
+          handler: async (paymentResult) => {
+            const verificationResponse = await fetch('/api/payments', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                paymentId: order.payment.id,
+                status: 'COMPLETED',
+                razorpayId: paymentResult.razorpay_payment_id,
+                razorpayOrderId: paymentResult.razorpay_order_id,
+                razorpaySignature: paymentResult.razorpay_signature,
+              }),
+            })
+            const verifiedPayment = await verificationResponse.json()
+            if (!verificationResponse.ok) {
+              addToast(verifiedPayment.error || 'Event payment verification failed', 'error')
+              return
+            }
+            if (verifiedPayment.registrationExpired) {
+              addToast('Payment verified, but event registration has closed. Contact the college about your payment.', 'error')
+              return
+            }
+            useAppStore.getState().setEvents(useAppStore.getState().events.map((item) =>
+              item.id === eventId ? { ...item, currentAttendees: item.currentAttendees + 1 } : item
+            ))
+            useAppStore.getState().setRegistrations([
+              ...useAppStore.getState().registrations,
+              { id: `payment-${verifiedPayment.id}`, userId: currentUser.id, eventId, status: 'REGISTERED', createdAt: verifiedPayment.createdAt },
+            ])
+            addToast('Payment verified and event registration confirmed!', 'success')
+          },
+          modal: { ondismiss: () => addToast('Payment window closed.', 'info') },
+        })
+        checkout.on('payment.failed', async (paymentFailure) => {
+          await fetch('/api/payments', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ paymentId: order.payment.id, status: 'FAILED' }),
+          }).catch(() => undefined)
+          addToast(paymentFailure.error?.description || 'Event payment failed.', 'error')
+        })
+        checkout.open()
+        return
+      }
+      const latestEvents = useAppStore.getState().events
+      useAppStore.getState().setEvents(latestEvents.map((item) =>
+        item.id === eventId ? { ...item, currentAttendees: item.currentAttendees + 1 } : item
+      ))
+      useAppStore.getState().setRegistrations([
+        ...useAppStore.getState().registrations,
+        { id: result.id, userId: result.userId, eventId: result.eventId, status: result.status, createdAt: result.createdAt },
+      ])
       addToast('Registered successfully!', 'success')
-    } catch {
-      addToast('Failed to register', 'error')
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : 'Failed to register', 'error')
     } finally {
       setRegistering(null)
     }
@@ -443,6 +599,20 @@ function EventsViewContent() {
       </div>
 
       {/* Filter Tabs */}
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <Label htmlFor="event-time-filter">Show</Label>
+        <Select value={dateFilter} onValueChange={setDateFilter}>
+          <SelectTrigger id="event-time-filter" className="w-48">
+            <SelectValue placeholder="Filter by date" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Upcoming and past</SelectItem>
+            <SelectItem value="upcoming">Upcoming</SelectItem>
+            <SelectItem value="current">Current</SelectItem>
+            <SelectItem value="past">Past</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
       <Tabs value={filter} onValueChange={setFilter}>
         <TabsList className="mb-4">
           {eventTypes.map(type => (
